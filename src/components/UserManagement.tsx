@@ -92,21 +92,30 @@ export const UserManagement = () => {
           }
         });
 
-        if (authError) throw authError;
+        if (authError) {
+          if (authError.message.includes('Database error')) {
+            throw new Error('Error de base de datos: Verifica que la columna "dni" exista en la tabla gd_profiles.');
+          }
+          throw authError;
+        }
 
-        // 2. El trigger 'handle_new_user' ya creó el perfil, ahora lo actualizamos con DNI y Rol
+        // 2. Si el registro fue exitoso, intentamos actualizar el perfil
         if (authData.user) {
           const { error: profileError } = await supabase
             .from('gd_profiles')
             .update({
               dni: formData.dni,
               role_id: formData.role_id,
-              full_name: formData.full_name // Aseguramos que se guarde
+              full_name: formData.full_name
             })
             .eq('id', authData.user.id);
           
-          if (profileError) throw profileError;
-          alert('Usuario creado con éxito. Si tienes habilitada la confirmación por email, el usuario deberá verificar su cuenta.');
+          if (profileError) {
+            console.error('Error actualizando perfil:', profileError);
+            alert('El usuario se creó en Auth pero hubo un error al guardar sus datos adicionales (DNI/Rol).');
+          } else {
+            alert('Usuario creado con éxito.');
+          }
         }
       }
 
