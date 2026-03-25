@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS gd_profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
     full_name TEXT,
+    dni TEXT,
     role_id INTEGER REFERENCES gd_roles(id) DEFAULT (SELECT id FROM gd_roles WHERE name = 'driver'),
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
