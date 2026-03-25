@@ -1,5 +1,5 @@
-import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import React from 'react';
 import L from 'leaflet';
 import type { VehicleLocationStatus, Vehicle } from '../types';
 
