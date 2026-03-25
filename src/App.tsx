@@ -125,7 +125,7 @@ function AdminView() {
 }
 
 // --- VISTA DEL CHOFER ---
-function DriverView() {
+function DriverView({ roleName }: { roleName?: string }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(() => {
     const saved = localStorage.getItem('geo_dispatch_vehicle');
@@ -173,7 +173,12 @@ function DriverView() {
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50">
       <header className="flex items-center justify-between py-4">
-        <h1 className="text-2xl font-black text-gray-900 tracking-tight">GeoDispatch <span className="text-blue-600">Chofer</span></h1>
+        <div>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight">GeoDispatch <span className="text-blue-600">Chofer</span></h1>
+          {roleName && roleName !== 'driver' && (
+            <p className="text-[10px] font-bold text-rose-500 mt-1 uppercase">Rol detectado: {roleName} (No es admin)</p>
+          )}
+        </div>
         <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-400 hover:text-rose-500"><LogOut className="w-5 h-5" /></button>
       </header>
       {!selectedVehicle ? (
@@ -206,13 +211,20 @@ export default function App() {
 
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
-      const { data } = await supabase
-        .from('gd_profiles')
-        .select('*, role:gd_roles(name)')
-        .eq('id', userId)
-        .single();
-      setProfile(data);
-      setLoading(false);
+      try {
+        const { data, error } = await supabase
+          .from('gd_profiles')
+          .select('*, role:gd_roles(name)')
+          .eq('id', userId)
+          .single();
+        
+        if (error) throw error;
+        setProfile(data);
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -223,8 +235,10 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else {
+      if (session) {
+        setLoading(true);
+        fetchProfile(session.user.id);
+      } else {
         setProfile(null);
         setLoading(false);
       }
@@ -237,20 +251,22 @@ export default function App() {
 
   if (!session) return <Login />;
 
-  const userRole = profile?.role?.name;
+  const rawRole = profile?.role?.name || '';
+  const userRole = rawRole.toLowerCase().trim();
+  const isAdmin = userRole === 'admin';
 
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
         <Routes>
-          {userRole === 'admin' ? (
+          {isAdmin ? (
             <>
               <Route path="/admin" element={<AdminView />} />
               <Route path="/" element={<Navigate to="/admin" />} />
             </>
           ) : (
             <>
-              <Route path="/" element={<DriverView />} />
+              <Route path="/" element={<DriverView roleName={rawRole} />} />
               <Route path="/admin" element={<Navigate to="/" />} />
             </>
           )}
