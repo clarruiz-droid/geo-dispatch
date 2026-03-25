@@ -7,11 +7,16 @@ import { StatusToggle } from './components/StatusToggle';
 import { GPSMonitor } from './components/GPSMonitor';
 import { useGeolocation } from './hooks/useGeolocation';
 import { DispatchMap } from './components/DispatchMap';
+import { AdminNavbar } from './components/AdminNavbar';
+import { UserManagement } from './components/UserManagement';
+import { VehicleManagement } from './components/VehicleManagement';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Shield } from 'lucide-react';
+import { LogOut, Truck, Users } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {
+  const [activeTab, setActiveTab] = useState<'map' | 'management'>('map');
+  const [managementTab, setManagementTab] = useState<'users' | 'vehicles'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
 
@@ -59,35 +64,62 @@ function AdminView() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen lg:flex-row overflow-hidden bg-gray-50">
-      <div className="w-full lg:w-80 bg-white border-b lg:border-r border-gray-200 shadow-sm z-10 p-4 overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-black text-blue-600 tracking-tight flex items-center gap-2">
-            <Shield className="w-6 h-6" /> Admin
-          </h1>
-          <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-400 hover:text-rose-500 transition-colors">
-            <LogOut className="w-5 h-5" />
-          </button>
+    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
+      <AdminNavbar activeTab={activeTab} onTabChange={setActiveTab} />
+      
+      {activeTab === 'map' ? (
+        <div className="flex flex-col flex-1 lg:flex-row overflow-hidden">
+          <div className="w-full lg:w-80 bg-white border-b lg:border-r border-gray-200 shadow-sm z-10 p-4 overflow-y-auto">
+            <div className="space-y-4">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
+              {vehicles.map(v => {
+                const s = statuses.find(stat => stat.vehicle_id === v.id);
+                return (
+                  <div key={v.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-gray-900">{v.patente}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">{v.modelo}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex-1 relative"><DispatchMap vehicles={vehicles} statuses={statuses} /></div>
         </div>
-        <div className="space-y-4">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
-          {vehicles.map(v => {
-            const s = statuses.find(stat => stat.vehicle_id === v.id);
-            return (
-              <div key={v.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-gray-900">{v.patente}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS'}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500">{v.modelo}</p>
-              </div>
-            );
-          })}
+      ) : (
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-6xl mx-auto space-y-6">
+            <div className="flex gap-4 mb-8">
+              <button
+                onClick={() => setManagementTab('vehicles')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                  managementTab === 'vehicles' 
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
+                    : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
+                }`}
+              >
+                <Truck className="w-5 h-5" /> Vehículos
+              </button>
+              <button
+                onClick={() => setManagementTab('users')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                  managementTab === 'users' 
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
+                    : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
+                }`}
+              >
+                <Users className="w-5 h-5" /> Usuarios
+              </button>
+            </div>
+
+            {managementTab === 'vehicles' ? <VehicleManagement /> : <UserManagement />}
+          </div>
         </div>
-      </div>
-      <div className="flex-1 relative"><DispatchMap vehicles={vehicles} statuses={statuses} /></div>
+      )}
     </div>
   );
 }
@@ -211,14 +243,12 @@ export default function App() {
     <Router>
       <div className="min-h-screen bg-gray-50">
         <Routes>
-          {/* Si es admin, puede elegir entre ver el mapa o la vista de chofer */}
           {userRole === 'admin' ? (
             <>
               <Route path="/admin" element={<AdminView />} />
               <Route path="/" element={<DriverView />} />
             </>
           ) : (
-            // Si es chofer, solo ve la vista de chofer y el /admin redirige al home
             <>
               <Route path="/" element={<DriverView />} />
               <Route path="/admin" element={<Navigate to="/" />} />
