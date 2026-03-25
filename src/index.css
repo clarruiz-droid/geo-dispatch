@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Forzar que el html y body tengan altura completa */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Estilos para el mapa (Leaflet) */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Clases auxiliares para asegurar visibilidad */
+.bg-gray-50 {
+  background-color: #f9fafb;
+}
+.min-h-screen {
+  min-height: 100vh;
+}
