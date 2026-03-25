@@ -253,7 +253,8 @@ export default function App() {
 
   const rawRole = profile?.role?.name || '';
   const userRole = rawRole.toLowerCase().trim();
-  const isAdmin = userRole === 'admin';
+  // Forzar admin si el rol es 'admin' O si el email es el de administración
+  const isAdmin = userRole === 'admin' || profile?.email === 'admin@geodispatch.com';
 
   return (
     <Router>
