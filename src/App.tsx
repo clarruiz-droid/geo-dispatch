@@ -218,10 +218,10 @@ export default function App() {
           .eq('id', userId)
           .single();
         
-        if (error) throw error;
+        if (error) console.error('Error de perfil:', error);
         setProfile(data);
       } catch (err) {
-        console.error('Error fetching profile:', err);
+        console.error('Error inesperado:', err);
       } finally {
         setLoading(false);
       }
@@ -251,28 +251,36 @@ export default function App() {
 
   if (!session) return <Login />;
 
-  const rawRole = profile?.role?.name || '';
-  const userRole = rawRole.toLowerCase().trim();
-  // Forzar admin si el rol es 'admin' O si el email es el de administración
-  const isAdmin = userRole === 'admin' || profile?.email === 'admin@geodispatch.com';
+  // DETECCIÓN DE ADMIN (Prioridad absoluta al email de sesión)
+  const userEmail = session.user.email?.toLowerCase().trim();
+  const dbRole = profile?.role?.name?.toLowerCase().trim() || '';
+  const isAdmin = userEmail === 'admin@geodispatch.com' || dbRole === 'admin';
 
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
         <Routes>
           {isAdmin ? (
+            // RUTAS DE ADMINISTRADOR
             <>
               <Route path="/admin" element={<AdminView />} />
-              <Route path="/" element={<Navigate to="/admin" />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
             </>
           ) : (
+            // RUTAS DE CHOFER
             <>
-              <Route path="/" element={<DriverView roleName={rawRole} />} />
-              <Route path="/admin" element={<Navigate to="/" />} />
+              <Route path="/" element={<DriverView roleName={dbRole} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}
-          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
+        
+        {/* DEBUG OVERLAY (Solo visible si hay algo raro) */}
+        {userEmail === 'admin@geodispatch.com' && !isAdmin && (
+          <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-[10px] p-1 text-center font-mono z-[999]">
+            DEBUG: Email={userEmail} | Role={dbRole} | ProfileLoaded={profile ? 'SI' : 'NO'}
+          </div>
+        )}
       </div>
     </Router>
   );
