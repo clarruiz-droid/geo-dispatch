@@ -246,7 +246,7 @@ export default function App() {
           {userRole === 'admin' ? (
             <>
               <Route path="/admin" element={<AdminView />} />
-              <Route path="/" element={<DriverView />} />
+              <Route path="/" element={<Navigate to="/admin" />} />
             </>
           ) : (
             <>
