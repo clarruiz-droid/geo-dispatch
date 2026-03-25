@@ -15,7 +15,8 @@ export const UserManagement = () => {
     dni: '',
     email: '',
     password: '',
-    role_id: 2 // Por defecto Chofer
+    role_id: 0,
+    role_name: 'driver'
   });
 
   useEffect(() => {
@@ -25,7 +26,14 @@ export const UserManagement = () => {
   const fetchData = async () => {
     setLoading(true);
     const { data: rData } = await supabase.from('gd_roles').select('*');
-    if (rData) setRoles(rData);
+    if (rData) {
+      setRoles(rData);
+      // Si estamos inicializando y no hay rol seleccionado, buscar el ID de driver
+      const driverRole = rData.find(r => r.name === 'driver');
+      if (driverRole && formData.role_id === 0) {
+        setFormData(prev => ({ ...prev, role_id: driverRole.id, role_name: 'driver' }));
+      }
+    }
 
     const { data: pData } = await supabase
       .from('gd_profiles')
@@ -38,13 +46,15 @@ export const UserManagement = () => {
   };
 
   const handleOpenCreate = () => {
+    const driverRole = roles.find(r => r.name === 'driver');
     setEditingProfile(null);
     setFormData({
       full_name: '',
       dni: '',
       email: '',
       password: '',
-      role_id: roles.find(r => r.name === 'driver')?.id || 2
+      role_id: driverRole?.id || 0,
+      role_name: 'driver'
     });
     setIsModalOpen(true);
   };
@@ -55,8 +65,9 @@ export const UserManagement = () => {
       full_name: profile.full_name || '',
       dni: profile.dni || '',
       email: profile.email || '',
-      password: '', // No se edita la contraseña aquí por seguridad
-      role_id: profile.role_id
+      password: '',
+      role_id: profile.role_id,
+      role_name: profile.role?.name || ''
     });
     setIsModalOpen(true);
   };
@@ -89,7 +100,8 @@ export const UserManagement = () => {
             data: {
               full_name: formData.full_name,
               dni: formData.dni,
-              role_id: formData.role_id
+              role_id: formData.role_id,
+              role_name: formData.role_name
             }
           }
         });
@@ -296,7 +308,7 @@ export const UserManagement = () => {
                     <button
                       key={r.id}
                       type="button"
-                      onClick={() => setFormData({ ...formData, role_id: r.id })}
+                      onClick={() => setFormData({ ...formData, role_id: r.id, role_name: r.name })}
                       className={`p-3 rounded-xl border font-bold text-sm flex items-center justify-center gap-2 transition-all ${
                         formData.role_id === r.id
                           ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100'
