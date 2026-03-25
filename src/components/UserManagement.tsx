@@ -92,28 +92,26 @@ export const UserManagement = () => {
           }
         });
 
+        // --- CREAR NUEVO USUARIO ---
+        // 1. Registrar en Auth enviando metadatos para el trigger
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.full_name,
+              dni: formData.dni,
+              role_id: formData.role_id
+            }
+          }
+        });
+
         if (authError) {
-          // Mostramos el error original para saber qué está pasando realmente
-          throw new Error(`Error de autenticación/base de datos: ${authError.message}`);
+          throw new Error(`Error de autenticación: ${authError.message}`);
         }
 
-        // 2. Si el registro fue exitoso, intentamos actualizar el perfil
         if (authData.user) {
-          const { error: profileError } = await supabase
-            .from('gd_profiles')
-            .update({
-              dni: formData.dni,
-              role_id: formData.role_id,
-              full_name: formData.full_name
-            })
-            .eq('id', authData.user.id);
-          
-          if (profileError) {
-            console.error('Error actualizando perfil:', profileError);
-            alert('El usuario se creó en Auth pero hubo un error al guardar sus datos adicionales (DNI/Rol).');
-          } else {
-            alert('Usuario creado con éxito.');
-          }
+          alert('Usuario creado con éxito. El perfil se generó automáticamente con sus datos.');
         }
       }
 
