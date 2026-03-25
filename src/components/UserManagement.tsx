@@ -81,18 +81,6 @@ export const UserManagement = () => {
         if (error) throw error;
       } else {
         // --- CREAR NUEVO USUARIO ---
-        // 1. Registrar en Auth
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            data: {
-              full_name: formData.full_name
-            }
-          }
-        });
-
-        // --- CREAR NUEVO USUARIO ---
         // 1. Registrar en Auth enviando metadatos para el trigger
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: formData.email,
