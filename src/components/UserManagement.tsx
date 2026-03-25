@@ -93,10 +93,8 @@ export const UserManagement = () => {
         });
 
         if (authError) {
-          if (authError.message.includes('Database error')) {
-            throw new Error('Error de base de datos: Verifica que la columna "dni" exista en la tabla gd_profiles.');
-          }
-          throw authError;
+          // Mostramos el error original para saber qué está pasando realmente
+          throw new Error(`Error de autenticación/base de datos: ${authError.message}`);
         }
 
         // 2. Si el registro fue exitoso, intentamos actualizar el perfil
