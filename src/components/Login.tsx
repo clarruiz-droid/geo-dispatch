@@ -82,9 +82,14 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
-        <p className="mt-8 text-center text-xs text-gray-400 italic">
-          Si no tienes cuenta, contacta al administrador del sistema.
-        </p>
+        <div className="mt-8 pt-6 border-t border-gray-50 flex flex-col items-center gap-2">
+          <p className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+            v0.2.1
+          </p>
+          <p className="text-center text-[10px] text-gray-300 italic">
+            Si no tienes cuenta, contacta al administrador del sistema.
+          </p>
+        </div>
       </div>
     </div>
   );
