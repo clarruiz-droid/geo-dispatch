@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../types';
-import { User, Shield, Loader2, RefreshCw, Pencil, Trash2, X, Check, IdCard } from 'lucide-react';
+import { User, Shield, Loader2, RefreshCw, Pencil, Trash2, X, Check, IdCard, Plus, Mail, Key } from 'lucide-react';
 
 export const UserManagement = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -13,6 +13,8 @@ export const UserManagement = () => {
   const [formData, setFormData] = useState({
     full_name: '',
     dni: '',
+    email: '',
+    password: '',
     role_id: 2 // Por defecto Chofer
   });
 
@@ -35,11 +37,25 @@ export const UserManagement = () => {
     setLoading(false);
   };
 
+  const handleOpenCreate = () => {
+    setEditingProfile(null);
+    setFormData({
+      full_name: '',
+      dni: '',
+      email: '',
+      password: '',
+      role_id: roles.find(r => r.name === 'driver')?.id || 2
+    });
+    setIsModalOpen(true);
+  };
+
   const handleEdit = (profile: Profile) => {
     setEditingProfile(profile);
     setFormData({
       full_name: profile.full_name || '',
       dni: profile.dni || '',
+      email: profile.email || '',
+      password: '', // No se edita la contraseña aquí por seguridad
       role_id: profile.role_id
     });
     setIsModalOpen(true);
@@ -47,26 +63,60 @@ export const UserManagement = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProfile) return;
     setActionLoading(true);
 
-    const { error } = await supabase
-      .from('gd_profiles')
-      .update({
-        full_name: formData.full_name,
-        dni: formData.dni,
-        role_id: formData.role_id,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', editingProfile.id);
+    try {
+      if (editingProfile) {
+        // --- ACTUALIZAR USUARIO EXISTENTE ---
+        const { error } = await supabase
+          .from('gd_profiles')
+          .update({
+            full_name: formData.full_name,
+            dni: formData.dni,
+            role_id: formData.role_id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingProfile.id);
+        
+        if (error) throw error;
+      } else {
+        // --- CREAR NUEVO USUARIO ---
+        // 1. Registrar en Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.full_name
+            }
+          }
+        });
 
-    if (!error) {
+        if (authError) throw authError;
+
+        // 2. El trigger 'handle_new_user' ya creó el perfil, ahora lo actualizamos con DNI y Rol
+        if (authData.user) {
+          const { error: profileError } = await supabase
+            .from('gd_profiles')
+            .update({
+              dni: formData.dni,
+              role_id: formData.role_id,
+              full_name: formData.full_name // Aseguramos que se guarde
+            })
+            .eq('id', authData.user.id);
+          
+          if (profileError) throw profileError;
+          alert('Usuario creado con éxito. Si tienes habilitada la confirmación por email, el usuario deberá verificar su cuenta.');
+        }
+      }
+
       setIsModalOpen(false);
       fetchData();
-    } else {
-      alert(error.message);
+    } catch (err: any) {
+      alert(err.message || 'Error al procesar la solicitud');
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -88,13 +138,20 @@ export const UserManagement = () => {
           <h2 className="text-xl font-bold text-gray-900">Usuarios</h2>
           <p className="text-sm text-gray-500">Gestiona roles y accesos del personal</p>
         </div>
-        <button 
-          onClick={fetchData}
-          className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-          title="Refrescar lista"
-        >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={fetchData}
+            className="p-2 text-gray-400 hover:text-blue-600 transition-colors bg-white rounded-xl border border-gray-100"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={handleOpenCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-100"
+          >
+            <Plus className="w-5 h-5" /> Nuevo Usuario
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -165,18 +222,54 @@ export const UserManagement = () => {
         </div>
       </div>
 
-      {/* Modal de Edición */}
+      {/* Modal de Alta/Edición */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="text-lg font-black text-gray-900">Editar Usuario</h3>
+              <h3 className="text-lg font-black text-gray-900">
+                {editingProfile ? 'Editar Usuario' : 'Nuevo Usuario'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-6 h-6" />
               </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Solo para NUEVOS usuarios */}
+              {!editingProfile && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Email (Acceso)</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="usuario@ejemplo.com"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Contraseña Temporal</label>
+                    <div className="relative">
+                      <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
               <div className="space-y-2">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nombre Completo</label>
                 <input
@@ -238,7 +331,7 @@ export const UserManagement = () => {
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 rounded-xl shadow-lg shadow-blue-100 flex items-center justify-center gap-2"
                 >
                   {actionLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
-                  Guardar Cambios
+                  {editingProfile ? 'Guardar Cambios' : 'Crear Usuario'}
                 </button>
               </div>
             </form>
