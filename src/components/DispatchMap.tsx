@@ -104,17 +104,21 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehic
           const vehicle = vehicles.find(v => v.id === status.vehicle_id);
           if (!status.lat || !status.lng || !vehicle) return null;
 
+          // Validar historial para asegurar que son coordenadas válidas [number, number]
+          const validHistory = (status.history || []).filter(h => 
+            Array.isArray(h) && h.length === 2 && typeof h[0] === 'number' && typeof h[1] === 'number'
+          );
+
           return (
             <React.Fragment key={status.vehicle_id}>
-              {status.history.length > 1 && (
+              {validHistory.length > 1 && (
                 <Polyline 
-                  positions={status.history} 
+                  positions={validHistory} 
                   pathOptions={{ 
                     color: getStatusColor(status.status, status.is_offline), 
                     weight: 3, 
-                    opacity: status.is_offline ? 0.3 : 0.6,
-                    dashArray: '5, 10'
-                  }} 
+                    opacity: status.is_offline ? 0.3 : 0.8,
+                    }} 
                 />
               )}
               

@@ -117,15 +117,35 @@ function AdminView() {
         const profileInfo = chofer ? { full_name: chofer.full_name || 'Desconocido' } : null;
         
         if (index === -1) {
-          return [...prev, { ...updated, profile: profileInfo, history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], updated_at: now }];
+          return [...prev, { 
+            ...updated, 
+            profile: profileInfo, 
+            history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], 
+            updated_at: now 
+          }];
         }
 
         const current = prev[index];
         const lat = updated.lat || current.lat;
         const lng = updated.lng || current.lng;
-        const newHistory = updated.lat && updated.lng ? [...current.history, [updated.lat, updated.lng] as [number, number]] : current.history;
+
+        // ACTUALIZACIÓN DE TRAIL: Solo añadimos al historial si la posición cambió
+        const isNewPos = updated.lat !== current.lat || updated.lng !== current.lng;
+        const newHistory = (updated.lat && updated.lng && isNewPos)
+          ? [...current.history, [updated.lat, updated.lng] as [number, number]]
+          : current.history;
+
         const newStatuses = [...prev];
-        newStatuses[index] = { ...current, ...updated, lat, lng, profile: profileInfo || current.profile, history: newHistory.slice(-50), updated_at: now, is_offline: false };
+        newStatuses[index] = { 
+          ...current, 
+          ...updated, 
+          lat, 
+          lng, 
+          profile: profileInfo || current.profile, 
+          history: newHistory.slice(-100), // Aumentamos a 100 puntos para un trail más largo
+          updated_at: now, 
+          is_offline: false 
+        };
         return newStatuses;
       });
     }).subscribe();
