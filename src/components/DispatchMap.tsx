@@ -75,17 +75,23 @@ const createCustomIcon = (status: string, patente: string, isAlert?: boolean, is
 };
 
 export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehicleId }) => {
-  const center: [number, number] = [-34.6037, -58.3816];
-  
-  // Buscar la ubicación del vehículo seleccionado para centrar
+  // Buscar la mejor ubicación para el centro inicial (vehículo seleccionado > primer vehículo con GPS > Obelisco)
   const selectedStatus = selectedVehicleId ? statuses.find(s => s.vehicle_id === selectedVehicleId) : null;
+  const firstActiveStatus = statuses.find(s => s.lat && s.lng);
+  
+  const initialCenter: [number, number] = (selectedStatus?.lat && selectedStatus?.lng)
+    ? [selectedStatus.lat, selectedStatus.lng]
+    : (firstActiveStatus?.lat && firstActiveStatus?.lng)
+      ? [firstActiveStatus.lat, firstActiveStatus.lng]
+      : [-34.6037, -58.3816];
+
   const mapCenter: [number, number] | null = (selectedStatus?.lat && selectedStatus?.lng) 
     ? [selectedStatus.lat, selectedStatus.lng] 
     : null;
 
   return (
     <div className="h-full w-full rounded-xl overflow-hidden border border-gray-200 shadow-inner">
-      <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }}>
+      <MapContainer center={initialCenter} zoom={selectedStatus ? 16 : 13} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
