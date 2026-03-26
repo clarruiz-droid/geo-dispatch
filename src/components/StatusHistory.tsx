@@ -21,24 +21,31 @@ export const StatusHistory = () => {
 
   const fetchHistory = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('gd_status_history')
-      .select(`
-        id,
-        status,
-        changed_at,
-        vehicle:gd_vehicles(patente, modelo),
-        profile:gd_profiles!gd_status_history_profile_id_fkey(full_name)
-      `)
-      .order('changed_at', { ascending: false })
-      .limit(100);
+    try {
+      const { data, error } = await supabase
+        .from('gd_status_history')
+        .select(`
+          id,
+          status,
+          changed_at,
+          vehicle:gd_vehicles(patente, modelo),
+          profile:gd_profiles(full_name)
+        `)
+        .order('changed_at', { ascending: false })
+        .limit(100);
 
-    if (error) {
-      console.error('Error fetching status history:', error);
-    } else {
-      setHistory(data as any);
+      if (error) {
+        console.error('[StatusHistory] Error de Supabase:', error);
+        alert(`Error al cargar historial: ${error.message}`);
+      } else {
+        console.log('[StatusHistory] Registros encontrados:', data?.length);
+        setHistory(data as any);
+      }
+    } catch (err) {
+      console.error('[StatusHistory] Error inesperado:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
