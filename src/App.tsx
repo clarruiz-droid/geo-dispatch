@@ -20,7 +20,7 @@ function AdminView() {
   const [activeTab, setActiveTab] = useState<'map' | 'management'>('map');
   const [managementTab, setManagementTab] = useState<'users' | 'vehicles' | 'history'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [, setProfiles] = useState<Profile[]>([]); // Usamos el setter pero no la variable directa
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean; profile?: { full_name: string } | null })[]>([]);
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
