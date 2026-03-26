@@ -131,8 +131,6 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
   const [status, setStatus] = useState<VehicleStatus>('standby');
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastPos, setLastPos] = useState<{lat: number, lng: number} | null>(null);
-  
-  // Referencia para evitar guardar datos justo después de recibirlos del servidor
   const skipNextUpdate = useRef(true);
 
   const isTracking = status === 'operativo' || status === 'demora';
@@ -158,41 +156,19 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
 
   const handleVehicleSelect = async (vehicle: Vehicle) => {
     setIsSyncing(true);
-    skipNextUpdate.current = true; // Bloqueamos el guardado automático
-    
+    skipNextUpdate.current = true;
     try {
-      // 1. Consultar estado real del servidor
-      const { data, error } = await supabase
-        .from('gd_vehicle_status')
-        .select('status, is_emergency, lat, lng')
-        .eq('vehicle_id', vehicle.id)
-        .single();
-
+      const { data, error } = await supabase.from('gd_vehicle_status').select('status, is_emergency, lat, lng').eq('vehicle_id', vehicle.id).single();
       if (!error && data) {
-        // Sincronizamos localmente con lo que diga el servidor
         setStatus(data.status as VehicleStatus);
         setIsEmergency(data.is_emergency);
         if (data.lat && data.lng) setLastPos({ lat: data.lat, lng: data.lng });
-        console.log('[Sync] Estado sincronizado desde el servidor:', data.status);
-      } else {
-        console.log('[Sync] Vehículo nuevo o sin estado previo. Usando valores iniciales.');
-        setStatus('standby');
-        setIsEmergency(false);
       }
-      
       setSelectedVehicle(vehicle);
       localStorage.setItem('geo_dispatch_vehicle', JSON.stringify(vehicle));
-      
-      // Liberamos el bloqueo después de un breve momento para permitir cambios del usuario
       setTimeout(() => { skipNextUpdate.current = false; }, 1000);
-
-    } catch (err) {
-      console.error('[Sync] Error crítico de sincronización:', err);
-      setSelectedVehicle(vehicle);
-      skipNextUpdate.current = false;
-    } finally {
-      setIsSyncing(false);
-    }
+    } catch (err) { setSelectedVehicle(vehicle); skipNextUpdate.current = false; }
+    finally { setIsSyncing(false); }
   };
 
   useEffect(() => {
@@ -209,21 +185,11 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
     return () => clearInterval(interval);
   }, [selectedVehicle, profileId, getPendingData, clearPending]);
 
-  // Actualizar estado preservando GPS (Solo si no es carga inicial)
   useEffect(() => {
     if (selectedVehicle && profileId && !skipNextUpdate.current) {
-      console.log('[Server] Actualizando estado en el servidor:', status);
-      const updateData: any = { 
-        vehicle_id: selectedVehicle.id, 
-        status, 
-        is_emergency: isEmergency, 
-        updated_at: new Date().toISOString(), 
-        updated_by: profileId 
-      };
-      
+      const updateData: any = { vehicle_id: selectedVehicle.id, status, is_emergency: isEmergency, updated_at: new Date().toISOString(), updated_by: profileId };
       if (location) { updateData.lat = location.lat; updateData.lng = location.lng; }
       else if (lastPos) { updateData.lat = lastPos.lat; updateData.lng = lastPos.lng; }
-      
       supabase.from('gd_vehicle_status').upsert(updateData).then();
     }
   }, [status, selectedVehicle, profileId, isEmergency, location, lastPos]);
