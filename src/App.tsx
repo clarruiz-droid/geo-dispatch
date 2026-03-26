@@ -35,25 +35,74 @@ function AdminView() {
   }, [statuses, muteSiren]);
 
   const fetchInitialData = async () => {
+    // 1. Cargar Vehículos y Perfiles
     const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
-    if (vData) setVehicles(vData);
     const { data: pData } = await supabase.from('gd_profiles').select('*');
     if (pData) { setProfiles(pData); profilesRef.current = pData; }
+    
+    // 2. Cargar Estados Actuales
     const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
+    
+    // 3. Cargar Historial de 2h para los trails
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { data: hData } = await supabase.from('gd_gps_history').select('vehicle_id, lat, lng, captured_at').gte('captured_at', twoHoursAgo).order('captured_at', { ascending: true });
 
-    if (sData) {
-      const mergedStatuses = await Promise.all(sData.map(async (s) => {
-        let lat = s.lat; let lng = s.lng;
+    if (vData) {
+      setVehicles(vData);
+      
+      // 4. CONSTRUCCIÓN EXHAUSTIVA DE LA FLOTA
+      const fleetStatuses = await Promise.all(vData.map(async (v) => {
+        // Buscamos si tiene un estado actual
+        const current = sData?.find(s => s.vehicle_id === v.id);
+        
+        let lat = current?.lat || null;
+        let lng = current?.lng || null;
+        let status = (current?.status as VehicleStatus) || 'standby';
+        let isEmergency = current?.is_emergency || false;
+        let updatedAt = current?.updated_at || v.created_at;
+        let updatedBy = current?.updated_by || null;
+        let profileInfo = current?.profile || null;
+
+        // BÚSQUEDA PROFUNDA: Si no hay GPS en el estado, buscamos el ÚLTIMO histórico absoluto
         if (!lat || !lng) {
-          const { data: lastGps } = await supabase.from('gd_gps_history').select('lat, lng').eq('vehicle_id', s.vehicle_id).order('captured_at', { ascending: false }).limit(1);
-          if (lastGps && lastGps.length > 0) { lat = lastGps[0].lat; lng = lastGps[0].lng; }
+          const { data: lastGps } = await supabase
+            .from('gd_gps_history')
+            .select('lat, lng, profile_id')
+            .eq('vehicle_id', v.id)
+            .order('captured_at', { ascending: false })
+            .limit(1);
+          
+          if (lastGps && lastGps.length > 0) {
+            lat = lastGps[0].lat;
+            lng = lastGps[0].lng;
+            // Si no teníamos chofer, intentamos recuperarlo del historial
+            if (!profileInfo && lastGps[0].profile_id) {
+              const chofer = profilesRef.current.find(p => p.id === lastGps[0].profile_id);
+              if (chofer) profileInfo = { full_name: chofer.full_name || 'Desconocido' };
+            }
+          }
         }
-        const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === s.vehicle_id).map(h => [h.lat, h.lng] as [number, number]) : [];
-        return { ...s, lat, lng, history: vehicleHistory, is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000 };
+
+        const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === v.id).map(h => [h.lat, h.lng] as [number, number]) : [];
+        
+        return {
+          vehicle_id: v.id,
+          status,
+          lat,
+          lng,
+          is_emergency: isEmergency,
+          updated_at: updatedAt,
+          updated_by: updatedBy,
+          created_at: v.created_at,
+          deleted_at: null,
+          created_by: null,
+          history: vehicleHistory,
+          is_offline: (Date.now() - new Date(updatedAt).getTime()) > 60000,
+          profile: profileInfo
+        };
       }));
-      setStatuses(mergedStatuses);
+
+      setStatuses(fleetStatuses);
     }
   };
 
@@ -66,7 +115,11 @@ function AdminView() {
         const now = new Date().toISOString();
         const chofer = profilesRef.current.find(p => p.id === updated.updated_by);
         const profileInfo = chofer ? { full_name: chofer.full_name || 'Desconocido' } : null;
-        if (index === -1) return [...prev, { ...updated, profile: profileInfo, history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], updated_at: now }];
+        
+        if (index === -1) {
+          return [...prev, { ...updated, profile: profileInfo, history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], updated_at: now }];
+        }
+
         const current = prev[index];
         const lat = updated.lat || current.lat;
         const lng = updated.lng || current.lng;
