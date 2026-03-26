@@ -143,6 +143,28 @@ function AdminView() {
 
   const toggleTrail = (vehicleId: string) => { setVisibleTrails(prev => ({ ...prev, [vehicleId]: !prev[vehicleId] })); };
 
+  const handleAdminStatusChange = async (vehicleId: string, newStatus: VehicleStatus) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const current = statuses.find(s => s.vehicle_id === vehicleId);
+    const { error } = await supabase.from('gd_vehicle_status').upsert({
+      vehicle_id: vehicleId, status: newStatus, is_emergency: current?.is_emergency || false,
+      updated_at: new Date().toISOString(), updated_by: session.user.id, lat: current?.lat, lng: current?.lng
+    });
+    if (!error) fetchInitialData();
+  };
+
+  const handleAdminEmergencyToggle = async (vehicleId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const current = statuses.find(s => s.vehicle_id === vehicleId);
+    const { error } = await supabase.from('gd_vehicle_status').upsert({
+      vehicle_id: vehicleId, status: current?.status || 'standby', is_emergency: !current?.is_emergency,
+      updated_at: new Date().toISOString(), updated_by: session.user.id, lat: current?.lat, lng: current?.lng
+    });
+    if (!error) fetchInitialData();
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50 text-left">
       <audio id="emergency-siren" src="https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3" loop />
@@ -160,12 +182,40 @@ function AdminView() {
                 const isTrailVisible = visibleTrails[v.id];
                 const isSelected = selectedVehicleId === v.id;
                 return (
-                  <div key={v.id} onClick={() => setSelectedVehicleId(v.id)} className={`p-3 rounded-lg border transition-all cursor-pointer flex justify-between items-start group ${s?.is_emergency ? 'bg-rose-50 border-rose-200 animate-pulse' : (isSelected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-gray-50 border-gray-100 hover:border-gray-200')}`}>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center mb-1"><span className="font-bold text-gray-900">{v.patente}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_emergency ? 'bg-rose-600 text-white' : (s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700')}`}>{s?.is_emergency ? 'SOS' : (s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS')}</span></div>
-                      <p className="text-xs text-gray-500">{v.modelo}</p>
+                  <div key={v.id} onClick={() => setSelectedVehicleId(v.id)} className={`p-3 rounded-lg border transition-all cursor-pointer flex flex-col gap-2 ${s?.is_emergency ? 'bg-rose-50 border-rose-200 animate-pulse' : (isSelected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-gray-50 border-gray-100 hover:border-gray-200')}`}>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-gray-900">{v.patente}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_emergency ? 'bg-rose-600 text-white' : (s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700')}`}>
+                            {s?.is_emergency ? 'SOS' : (s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-medium truncate">{s?.profile?.full_name || 'Sin chofer'}</p>
+                      </div>
+                      <div className="flex gap-1 ml-2">
+                        <button onClick={(e) => { e.stopPropagation(); toggleTrail(v.id); }} className={`p-1.5 rounded-md transition-all ${isTrailVisible ? 'bg-blue-100 text-blue-600' : 'text-gray-300 hover:bg-gray-100'}`}>
+                          {isTrailVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleAdminEmergencyToggle(v.id); }} className={`p-1.5 rounded-md transition-all ${s?.is_emergency ? 'bg-rose-600 text-white' : 'text-rose-300 hover:bg-rose-50'}`}>
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); toggleTrail(v.id); }} className={`ml-3 p-2 rounded-lg transition-all ${isTrailVisible ? 'bg-blue-100 text-blue-600' : 'text-gray-300 hover:bg-gray-100'}`}>{isTrailVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}</button>
+
+                    <div className="grid grid-cols-4 gap-1 pt-1 border-t border-gray-100/50">
+                      {(['operativo', 'demora', 'standby', 'mtto'] as VehicleStatus[]).map((st) => (
+                        <button
+                          key={st}
+                          onClick={(e) => { e.stopPropagation(); handleAdminStatusChange(v.id, st); }}
+                          className={`text-[9px] font-bold py-1 rounded transition-all uppercase ${
+                            s?.status === st ? 'bg-blue-600 text-white' : 'bg-white text-gray-400 border border-gray-100'
+                          }`}
+                        >
+                          {st.slice(0, 4)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
