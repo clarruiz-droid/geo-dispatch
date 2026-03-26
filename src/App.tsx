@@ -75,8 +75,38 @@ function AdminView() {
         schema: 'public', 
         table: 'gd_vehicle_status' 
       }, (payload) => {
-          console.log('[Realtime] Cambio detectado:', payload.eventType, payload.new);
-          fetchInitialData();
+          console.log('[Realtime] Cambio recibido:', payload.eventType, payload.new);
+          const updated = payload.new as VehicleLocationStatus;
+          
+          setStatuses(prev => {
+            const index = prev.findIndex(s => s.vehicle_id === updated.vehicle_id);
+            const now = new Date().toISOString();
+            
+            // Si no existe, lo añadimos
+            if (index === -1) {
+              return [...prev, { 
+                ...updated, 
+                history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], 
+                updated_at: now 
+              }];
+            }
+
+            // Si existe, actualizamos solo ese vehículo preservando el historial
+            const current = prev[index];
+            const newHistory = updated.lat && updated.lng 
+              ? [...current.history, [updated.lat, updated.lng] as [number, number]] 
+              : current.history;
+
+            const newStatuses = [...prev];
+            newStatuses[index] = { 
+              ...current, // Mantenemos datos que no vienen en el payload (como el profile join inicial si lo hubiera)
+              ...updated, 
+              history: newHistory.slice(-50), // Mantenemos los últimos 50 puntos
+              updated_at: now, 
+              is_offline: false 
+            };
+            return newStatuses;
+          });
       })
       .subscribe((status) => {
         console.log('[Realtime] Estado de conexión:', status);
