@@ -1,16 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-interface Location {
+export interface GPSLocation {
   lat: number
   lng: number
   accuracy?: number
   timestamp: number
 }
 
+const STORAGE_KEY = 'gd_pending_gps'
+
 export const useGeolocation = (isTracking: boolean) => {
-  const [location, setLocation] = useState<Location | null>(null)
+  const [location, setLocation] = useState<GPSLocation | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pendingSync, setPendingSync] = useState<Location[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
+  const lastCaptureTime = useRef<number>(0)
+
+  // Cargar contador inicial de pendientes
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const pending = JSON.parse(saved)
+      setPendingCount(pending.length)
+    }
+  }, [])
 
   useEffect(() => {
     if (!isTracking) {
@@ -18,44 +30,57 @@ export const useGeolocation = (isTracking: boolean) => {
       return
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const newLocation: Location = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: position.timestamp,
-        }
-        
-        setLocation(newLocation)
-        setError(null)
+    const captureLocation = () => {
+      const now = Date.now()
+      // Solo capturar si ha pasado al menos 55 segundos (margen para el minuto)
+      if (now - lastCaptureTime.current < 55000) return
 
-        // Si estamos offline, guardamos en la cola de pendientes
-        if (!navigator.onLine) {
-          setPendingSync(prev => [...prev, newLocation])
-          console.log('[OFFLINE] Ubicación guardada para sincronización futura')
-        }
-      },
-      (err) => setError(err.message),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    )
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation: GPSLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp,
+          }
+          
+          setLocation(newLocation)
+          setError(null)
+          lastCaptureTime.current = now
 
-    return () => navigator.geolocation.clearWatch(watchId)
-  }, [isTracking])
-
-  // Escuchar cuando volvemos a estar online
-  useEffect(() => {
-    const handleOnline = () => {
-      if (pendingSync.length > 0) {
-        console.log(`[ONLINE] Sincronizando ${pendingSync.length} puntos pendientes...`)
-        // Aquí iría la lógica de envío masivo a Supabase
-        setPendingSync([]) // Limpiamos después de sincronizar
-      }
+          // Lógica Store and Forward
+          if (!navigator.onLine) {
+            const saved = localStorage.getItem(STORAGE_KEY)
+            const pending = saved ? JSON.parse(saved) : []
+            const updated = [...pending, newLocation]
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+            setPendingCount(updated.length)
+            console.log('[GPS] Offline: Punto guardado localmente')
+          }
+        },
+        (err) => setError(err.message),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      )
     }
 
-    window.addEventListener('online', handleOnline)
-    return () => window.removeEventListener('online', handleOnline)
-  }, [pendingSync])
+    // Captura inicial inmediata
+    captureLocation()
 
-  return { location, error, pendingCount: pendingSync.length }
+    // Intervalo de revisión cada 10 segundos para ver si toca capturar
+    const interval = setInterval(captureLocation, 10000)
+
+    return () => clearInterval(interval)
+  }, [isTracking])
+
+  const clearPending = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setPendingCount(0)
+  }
+
+  const getPendingData = (): GPSLocation[] => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved ? JSON.parse(saved) : []
+  }
+
+  return { location, error, pendingCount, getPendingData, clearPending }
 }

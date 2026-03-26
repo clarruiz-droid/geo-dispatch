@@ -125,7 +125,7 @@ function AdminView() {
 }
 
 // --- VISTA DEL CHOFER ---
-function DriverView({ roleName }: { roleName?: string }) {
+function DriverView({ roleName, profileId }: { roleName?: string; profileId?: string }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(() => {
     const saved = localStorage.getItem('geo_dispatch_vehicle');
@@ -136,7 +136,7 @@ function DriverView({ roleName }: { roleName?: string }) {
   });
 
   const isTracking = status === 'operativo' || status === 'demora';
-  const { location, error, pendingCount } = useGeolocation(isTracking);
+  const { location, error, pendingCount, getPendingData, clearPending } = useGeolocation(isTracking);
 
   useEffect(() => {
     const fetchVehicles = async () => {
@@ -146,6 +146,37 @@ function DriverView({ roleName }: { roleName?: string }) {
     fetchVehicles();
   }, []);
 
+  // --- LÓGICA DE SINCRONIZACIÓN STORE & FORWARD ---
+  useEffect(() => {
+    const syncPendingData = async () => {
+      if (!navigator.onLine || !selectedVehicle || !profileId) return;
+      
+      const pending = getPendingData();
+      if (pending.length === 0) return;
+
+      console.log(`[SYNC] Sincronizando ${pending.length} puntos GPS...`);
+      
+      const { error } = await supabase.from('gd_gps_history').insert(
+        pending.map(p => ({
+          vehicle_id: selectedVehicle.id,
+          profile_id: profileId,
+          lat: p.lat,
+          lng: p.lng,
+          accuracy: p.accuracy,
+          captured_at: new Date(p.timestamp).toISOString()
+        }))
+      );
+
+      if (!error) {
+        clearPending();
+        console.log('[SYNC] Sincronización completada con éxito');
+      }
+    };
+
+    const interval = setInterval(syncPendingData, 30000); // Intentar sincronizar cada 30 seg
+    return () => clearInterval(interval);
+  }, [selectedVehicle, profileId, getPendingData, clearPending]);
+
   useEffect(() => {
     if (selectedVehicle) localStorage.setItem('geo_dispatch_vehicle', JSON.stringify(selectedVehicle));
     else localStorage.removeItem('geo_dispatch_vehicle');
@@ -154,21 +185,39 @@ function DriverView({ roleName }: { roleName?: string }) {
   useEffect(() => {
     localStorage.setItem('geo_dispatch_status', status);
     if (selectedVehicle) {
-      supabase.from('gd_vehicle_status').upsert({ vehicle_id: selectedVehicle.id, status, updated_at: new Date().toISOString() }).then();
+      supabase.from('gd_vehicle_status').upsert({ 
+        vehicle_id: selectedVehicle.id, 
+        status, 
+        updated_at: new Date().toISOString(),
+        updated_by: profileId
+      }).then();
     }
-  }, [status, selectedVehicle]);
+  }, [status, selectedVehicle, profileId]);
 
+  // --- GUARDADO DE PUNTO GPS EN HISTORIAL ---
   useEffect(() => {
-    if (selectedVehicle && location && navigator.onLine) {
+    if (selectedVehicle && location && navigator.onLine && profileId) {
+      // 1. Actualizar estado actual (Mapa en vivo)
       supabase.from('gd_vehicle_status').upsert({
         vehicle_id: selectedVehicle.id,
         status,
         lat: location.lat,
         lng: location.lng,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        updated_by: profileId
+      }).then();
+
+      // 2. Guardar en historial histórico
+      supabase.from('gd_gps_history').insert({
+        vehicle_id: selectedVehicle.id,
+        profile_id: profileId,
+        lat: location.lat,
+        lng: location.lng,
+        accuracy: location.accuracy,
+        captured_at: new Date(location.timestamp).toISOString()
       }).then();
     }
-  }, [location, selectedVehicle, status]);
+  }, [location, selectedVehicle, status, profileId]);
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50">
@@ -269,7 +318,7 @@ export default function App() {
           ) : (
             // RUTAS DE CHOFER
             <>
-              <Route path="/" element={<DriverView roleName={dbRole} />} />
+              <Route path="/" element={<DriverView roleName={dbRole} profileId={session?.user?.id} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}
