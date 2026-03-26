@@ -37,35 +37,35 @@ function AdminView() {
     }
   }, [statuses, muteSiren]);
 
+  const fetchInitialData = async () => {
+    const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
+    if (vData) setVehicles(vData);
+
+    const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
+    
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data: hData } = await supabase
+      .from('gd_gps_history')
+      .select('vehicle_id, lat, lng, captured_at')
+      .gte('captured_at', twoHoursAgo)
+      .order('captured_at', { ascending: true });
+
+    if (sData) {
+      setStatuses(sData.map(s => {
+        const vehicleHistory = hData 
+          ? hData.filter(h => h.vehicle_id === s.vehicle_id).map(h => [h.lat, h.lng] as [number, number])
+          : [];
+        
+        return {
+          ...s,
+          history: vehicleHistory,
+          is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000
+        };
+      }));
+    }
+  };
+
   useEffect(() => {
-    const fetchInitialData = async () => {
-      const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
-      if (vData) setVehicles(vData);
-
-      const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
-      
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-      const { data: hData } = await supabase
-        .from('gd_gps_history')
-        .select('vehicle_id, lat, lng, captured_at')
-        .gte('captured_at', twoHoursAgo)
-        .order('captured_at', { ascending: true });
-
-      if (sData) {
-        setStatuses(sData.map(s => {
-          const vehicleHistory = hData 
-            ? hData.filter(h => h.vehicle_id === s.vehicle_id).map(h => [h.lat, h.lng] as [number, number])
-            : [];
-          
-          return {
-            ...s,
-            history: vehicleHistory,
-            is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000
-          };
-        }));
-      }
-    };
-
     fetchInitialData();
 
     const channel = supabase
@@ -224,29 +224,42 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
     else localStorage.removeItem('geo_dispatch_vehicle');
   }, [selectedVehicle]);
 
+  // Enviar estado y emergencia
   useEffect(() => {
-    if (selectedVehicle) {
+    if (selectedVehicle && profileId) {
       supabase.from('gd_vehicle_status').upsert({ 
         vehicle_id: selectedVehicle.id, status, is_emergency: isEmergency, updated_at: new Date().toISOString(), updated_by: profileId
-      }).then();
+      }).then(({ error }) => {
+        if (error) console.error('[GPS] Error actualizando estado:', error.message);
+      });
     }
   }, [status, selectedVehicle, profileId, isEmergency]);
 
+  // Enviar GPS e Historial
   useEffect(() => {
-    if (selectedVehicle && location && navigator.onLine && profileId) {
-      supabase.from('gd_vehicle_status').upsert({
-        vehicle_id: selectedVehicle.id, status, lat: location.lat, lng: location.lng, updated_at: new Date().toISOString(), updated_by: profileId
-      }).then();
-      supabase.from('gd_gps_history').insert({
-        vehicle_id: selectedVehicle.id, profile_id: profileId, lat: location.lat, lng: location.lng, accuracy: location.accuracy, captured_at: new Date(location.timestamp).toISOString()
-      }).then();
+    if (selectedVehicle && location && profileId) {
+      console.log('[GPS] Enviando posición:', location.lat, location.lng);
+      
+      if (navigator.onLine) {
+        supabase.from('gd_vehicle_status').upsert({
+          vehicle_id: selectedVehicle.id, status, lat: location.lat, lng: location.lng, updated_at: new Date().toISOString(), updated_by: profileId
+        }).then(({ error }) => {
+          if (error) console.error('[GPS] Error en tiempo real:', error.message);
+        });
+
+        supabase.from('gd_gps_history').insert({
+          vehicle_id: selectedVehicle.id, profile_id: profileId, lat: location.lat, lng: location.lng, accuracy: location.accuracy, captured_at: new Date(location.timestamp).toISOString()
+        }).then(({ error }) => {
+          if (error) console.error('[GPS] Error en historial:', error.message);
+        });
+      }
     }
   }, [location, selectedVehicle, status, profileId]);
 
   const toggleEmergency = () => {
     const next = !isEmergency;
     setIsEmergency(next);
-    if (next && location && selectedVehicle) {
+    if (next && location && selectedVehicle && profileId) {
       supabase.from('gd_vehicle_status').upsert({
         vehicle_id: selectedVehicle.id, status, lat: location.lat, lng: location.lng, is_emergency: true, updated_at: new Date().toISOString(), updated_by: profileId
       }).then();
