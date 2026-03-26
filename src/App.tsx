@@ -26,6 +26,9 @@ function AdminView() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [muteSiren, setMuteSiren] = useState(false);
 
+  // Usamos una Ref para los perfiles para que el Realtime no se reinicie al cargarlos
+  const profilesRef = useRef<Profile[]>([]);
+
   useEffect(() => {
     const hasEmergency = statuses.some(s => s.is_emergency && !s.is_offline);
     const siren = document.getElementById('emergency-siren') as HTMLAudioElement;
@@ -34,44 +37,109 @@ function AdminView() {
   }, [statuses, muteSiren]);
 
   const fetchInitialData = async () => {
+    // 1. Cargar Vehículos y Perfiles
     const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
     if (vData) setVehicles(vData);
+    
     const { data: pData } = await supabase.from('gd_profiles').select('*');
-    if (pData) setProfiles(pData);
+    if (pData) {
+      setProfiles(pData);
+      profilesRef.current = pData;
+    }
+
+    // 2. Cargar Estados Actuales
     const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
+    
+    // 3. Cargar Historial de 2h
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { data: hData } = await supabase.from('gd_gps_history').select('vehicle_id, lat, lng, captured_at').gte('captured_at', twoHoursAgo).order('captured_at', { ascending: true });
 
     if (sData) {
-      setStatuses(sData.map(s => {
+      const mergedStatuses = await Promise.all(sData.map(async (s) => {
+        let lat = s.lat;
+        let lng = s.lng;
+
+        // Si no tiene ubicación en el estado actual, buscamos LA ÚLTIMA en el historial total
+        if (!lat || !lng) {
+          const { data: lastGps } = await supabase
+            .from('gd_gps_history')
+            .select('lat, lng')
+            .eq('vehicle_id', s.vehicle_id)
+            .order('captured_at', { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (lastGps) {
+            lat = lastGps.lat;
+            lng = lastGps.lng;
+          }
+        }
+
         const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === s.vehicle_id).map(h => [h.lat, h.lng] as [number, number]) : [];
-        return { ...s, history: vehicleHistory, is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000 };
+        
+        return { 
+          ...s, 
+          lat, 
+          lng, 
+          history: vehicleHistory, 
+          is_offline: (Date.now() - new Date(s.updated_at).getTime()) > 60000 
+        };
       }));
+      setStatuses(mergedStatuses);
     }
   };
 
   useEffect(() => {
     fetchInitialData();
+
     const channel = supabase.channel('fleet-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'gd_vehicle_status' }, (payload) => {
       const updated = payload.new as VehicleLocationStatus;
+      
       setStatuses(prev => {
         const index = prev.findIndex(s => s.vehicle_id === updated.vehicle_id);
         const now = new Date().toISOString();
-        const chofer = profiles.find(p => p.id === updated.updated_by);
+        
+        // Buscar nombre del chofer usando la Ref (para no reiniciar el effect)
+        const chofer = profilesRef.current.find(p => p.id === updated.updated_by);
         const profileInfo = chofer ? { full_name: chofer.full_name || 'Desconocido' } : null;
-        if (index === -1) return [...prev, { ...updated, profile: profileInfo, history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], updated_at: now }];
+
+        if (index === -1) {
+          return [...prev, { 
+            ...updated, 
+            profile: profileInfo, 
+            history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], 
+            updated_at: now 
+          }];
+        }
+
         const current = prev[index];
+        // Preservamos las coordenadas viejas si las nuevas vienen nulas
+        const lat = updated.lat || current.lat;
+        const lng = updated.lng || current.lng;
+
         const newHistory = updated.lat && updated.lng ? [...current.history, [updated.lat, updated.lng] as [number, number]] : current.history;
         const newStatuses = [...prev];
-        newStatuses[index] = { ...updated, profile: profileInfo || current.profile, history: newHistory.slice(-50), updated_at: now, is_offline: false };
+        
+        newStatuses[index] = { 
+          ...current,
+          ...updated, 
+          lat, // Aseguramos que nunca sea null si ya teníamos una
+          lng,
+          profile: profileInfo || current.profile,
+          history: newHistory.slice(-50),
+          updated_at: now, 
+          is_offline: false 
+        };
         return newStatuses;
       });
     }).subscribe();
+
     const offlineInterval = setInterval(() => {
       setStatuses(prev => prev.map(s => ({ ...s, is_offline: (Date.now() - new Date(s.updated_at).getTime()) > 60000 })));
-    }, 10000);
+    }, 15000);
+
     return () => { supabase.removeChannel(channel); clearInterval(offlineInterval); };
-  }, [profiles]);
+  }, []); // Sin dependencias para que sea estable
 
   const toggleTrail = (vehicleId: string) => { setVisibleTrails(prev => ({ ...prev, [vehicleId]: !prev[vehicleId] })); };
 
@@ -185,6 +253,7 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
     return () => clearInterval(interval);
   }, [selectedVehicle, profileId, getPendingData, clearPending]);
 
+  // Actualizar estado preservando GPS
   useEffect(() => {
     if (selectedVehicle && profileId && !skipNextUpdate.current) {
       const updateData: any = { vehicle_id: selectedVehicle.id, status, is_emergency: isEmergency, updated_at: new Date().toISOString(), updated_by: profileId };
