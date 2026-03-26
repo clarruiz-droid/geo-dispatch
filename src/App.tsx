@@ -12,7 +12,7 @@ import { UserManagement } from './components/UserManagement';
 import { VehicleManagement } from './components/VehicleManagement';
 import { StatusHistory } from './components/StatusHistory';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Users, Eye, EyeOff, Map as MapIcon, Clock } from 'lucide-react';
+import { LogOut, Truck, Users, User, Eye, EyeOff, Map as MapIcon, Clock } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {

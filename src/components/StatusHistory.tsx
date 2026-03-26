@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Clock, Truck, User, RefreshCw, Loader2, Calendar } from 'lucide-react';
+import { Truck, User, RefreshCw, Loader2, Calendar } from 'lucide-react';
 
 interface StatusHistoryEntry {
   id: number;
