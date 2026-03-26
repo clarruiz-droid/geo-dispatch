@@ -29,7 +29,7 @@ export const StatusHistory = () => {
           status,
           changed_at,
           vehicle:gd_vehicles(patente, modelo),
-          profile:gd_profiles(full_name)
+          profile:profile_id(full_name)
         `)
         .order('changed_at', { ascending: false })
         .limit(100);
