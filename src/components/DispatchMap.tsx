@@ -16,6 +16,7 @@ interface Props {
   vehicles: Vehicle[];
   statuses: ExtendedStatus[];
   selectedVehicleId?: string | null;
+  historicalTrail: [number, number][] | null;
 }
 
 // Componente para controlar el movimiento del mapa
@@ -74,7 +75,7 @@ const createCustomIcon = (status: string, patente: string, isAlert?: boolean, is
   });
 };
 
-export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehicleId }) => {
+export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehicleId, historicalTrail }) => {
   // Buscar la mejor ubicación para el centro inicial (vehículo seleccionado > primer vehículo con GPS > Obelisco)
   const selectedStatus = selectedVehicleId ? statuses.find(s => s.vehicle_id === selectedVehicleId) : null;
   const firstActiveStatus = statuses.find(s => s.lat && s.lng);
@@ -100,6 +101,15 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehic
         {/* Controlador de cámara */}
         <MapController center={mapCenter} />
         
+        
+        {/* Recorrido histórico buscado */}
+        {historicalTrail && historicalTrail.length > 0 && (
+          <Polyline
+            positions={historicalTrail}
+            pathOptions={{ color: '#ef4444', weight: 5, opacity: 0.8 }}
+          />
+        )}
+
         {statuses.map((status) => {
           const vehicle = vehicles.find(v => v.id === status.vehicle_id);
           if (!status.lat || !status.lng || !vehicle) return null;

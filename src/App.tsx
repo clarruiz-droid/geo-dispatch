@@ -25,6 +25,7 @@ function AdminView() {
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [muteSiren, setMuteSiren] = useState(false);
+  const [historicalTrail, setHistoricalTrail] = useState<[number, number][] | null>(null);
   const profilesRef = useRef<Profile[]>([]);
 
   useEffect(() => {
@@ -179,6 +180,31 @@ function AdminView() {
     if (!error) fetchInitialData();
   };
 
+    const handleFetchTrail = async (vehicleId: string, startDate: string, endDate:string) => {
+    try {
+      const { data, error } = await supabase
+        .from('gd_gps_history')
+        .select('lat, lng')
+        .eq('vehicle_id', vehicleId)
+        .gte('captured_at', startDate)
+        .lte('captured_at', endDate)
+        .order('captured_at', { ascending: true });
+
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setHistoricalTrail(data.map(p => [p.lat, p.lng]));
+        setActiveTab('map'); // Cambiar a la vista del mapa para ver el resultado
+      } else {
+        alert('No se encontraron datos de GPS para el vehículo en el rango de fechas seleccionado.');
+        setHistoricalTrail(null);
+      }
+    } catch (err: any) {
+      alert(`Error al buscar el recorrido: ${err.message}`);
+      setHistoricalTrail(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50 text-left">
       <audio id="emergency-siren" src="https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3" loop />
@@ -217,7 +243,7 @@ function AdminView() {
               })}
             </div>
           </div>
-          <div className="flex-1 relative"><DispatchMap vehicles={vehicles} selectedVehicleId={selectedVehicleId} statuses={statuses.map(s => ({ ...s, history: visibleTrails[s.vehicle_id] ? s.history : [] }))} /></div>
+          <div className="flex-1 relative"><DispatchMap vehicles={vehicles} selectedVehicleId={selectedVehicleId} statuses={statuses.map(s => ({ ...s, history: visibleTrails[s.vehicle_id] ? s.history : [] }))} historicalTrail={historicalTrail} /></div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
@@ -229,7 +255,7 @@ function AdminView() {
             </div>
             {managementTab === 'vehicles' && <VehicleManagement />}
             {managementTab === 'users' && <UserManagement />}
-            {managementTab === 'history' && <StatusHistory />}
+            {managementTab === 'history' && <StatusHistory onFetchTrail={handleFetchTrail} />}
           </div>
         </div>
       )}

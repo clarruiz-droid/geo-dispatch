@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Truck, User, RefreshCw, Loader2, Calendar } from 'lucide-react';
+import { Truck, User, RefreshCw, Loader2, Calendar, Map } from 'lucide-react';
+import type { Vehicle } from '../types';
 
 interface StatusHistoryEntry {
   id: number;
@@ -15,42 +16,65 @@ interface StatusHistoryEntry {
   } | null;
 }
 
-export const StatusHistory = () => {
+interface StatusHistoryProps {
+  onFetchTrail: (vehicleId: string, startDate: string, endDate: string) => Promise<void>;
+}
+
+export const StatusHistory: React.FC<StatusHistoryProps> = ({ onFetchTrail }) => {
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const fetchHistory = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('gd_status_history')
-        .select(`
-          id,
-          status,
-          changed_at,
-          vehicle:gd_vehicles(patente, modelo),
-          profile:profile_id(full_name)
-        `)
-        .order('changed_at', { ascending: false })
-        .limit(100);
-
-      if (error) {
-        console.error('[StatusHistory] Error de Supabase:', error);
-        alert(`Error al cargar historial: ${error.message}`);
-      } else {
-        console.log('[StatusHistory] Registros encontrados:', data?.length);
-        setHistory(data as any);
-      }
-    } catch (err) {
-      console.error('[StatusHistory] Error inesperado:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  
+  // Estados para el nuevo buscador
+  const [selectedVehicle, setSelectedVehicle] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [loadingTrail, setLoadingTrail] = useState(false);
 
   useEffect(() => {
-    fetchHistory();
+    const fetchInitialData = async () => {
+      setLoading(true);
+      try {
+        // Cargar vehículos para el selector
+        const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null).order('patente');
+        if (vData) setVehicles(vData);
+
+        // Cargar historial de estados
+        const { data, error } = await supabase
+          .from('gd_status_history')
+          .select(`
+            id, status, changed_at,
+            vehicle:gd_vehicles(patente, modelo),
+            profile:profile_id(full_name)
+          `)
+          .order('changed_at', { ascending: false })
+          .limit(100);
+
+        if (error) {
+          throw error;
+        } else {
+          setHistory(data as any);
+        }
+      } catch (err: any) {
+        console.error('[StatusHistory] Error inesperado:', err);
+        alert(`Error al cargar datos: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchInitialData();
   }, []);
+
+  const handleFetchTrail = async () => {
+    if (!selectedVehicle || !startDate || !endDate) {
+      alert('Por favor, seleccione un vehículo y un rango de fechas completo.');
+      return;
+    }
+    setLoadingTrail(true);
+    await onFetchTrail(selectedVehicle, startDate, endDate);
+    setLoadingTrail(false);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -65,29 +89,76 @@ export const StatusHistory = () => {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return new Intl.DateTimeFormat('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     }).format(date);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 text-left">Historial de Estados</h2>
-          <p className="text-sm text-gray-500 text-left">Registro de cambios y movimientos de la flota</p>
+    <div className="space-y-12">
+      {/* SECCIÓN NUEVA: BÚSQUEDA DE RECORRIDO HISTÓRICO */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 text-left">Recorrido Histórico por Vehículo</h2>
+        <p className="text-sm text-gray-500 text-left">Selecciona un vehículo y un rango de fechas para visualizar su trayecto en el mapa.</p>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div className="md:col-span-2">
+          <label htmlFor="vehicle-select" className="block text-xs font-bold text-gray-500 uppercase mb-2">Vehículo</label>
+          <select 
+            id="vehicle-select"
+            value={selectedVehicle}
+            onChange={(e) => setSelectedVehicle(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold"
+          >
+            <option value="">Seleccionar patente...</option>
+            {vehicles.map(v => <option key={v.id} value={v.id}>{v.patente}</option>)}
+          </select>
         </div>
-        <button 
-          onClick={fetchHistory}
-          className="p-2 text-gray-400 hover:text-blue-600 transition-colors bg-white rounded-xl border border-gray-100"
+        <div>
+          <label htmlFor="start-date" className="block text-xs font-bold text-gray-500 uppercase mb-2">Desde</label>
+          <input 
+            type="datetime-local" 
+            id="start-date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold" 
+          />
+        </div>
+        <div>
+          <label htmlFor="end-date" className="block text-xs font-bold text-gray-500 uppercase mb-2">Hasta</label>
+          <input 
+            type="datetime-local" 
+            id="end-date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold"
+          />
+        </div>
+        <button
+          onClick={handleFetchTrail}
+          disabled={loadingTrail}
+          className="md:col-span-4 w-full p-4 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all disabled:bg-blue-300"
         >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          {loadingTrail ? <Loader2 className="w-5 h-5 animate-spin" /> : <Map className="w-5 h-5" />}
+          Ver Recorrido en el Mapa
         </button>
       </div>
 
+      {/* SECCIÓN ANTIGUA: HISTORIAL DE ESTADOS */}
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 text-left">Historial de Cambios de Estado</h2>
+            <p className="text-sm text-gray-500 text-left">Últimos 100 cambios de estado de la flota.</p>
+          </div>
+          <button 
+            onClick={() => { /* Lógica de fetchHistory ya está en useEffect */ }}
+            className="p-2 text-gray-400 hover:text-blue-600 transition-colors bg-white rounded-xl border border-gray-100"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden text-left">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
