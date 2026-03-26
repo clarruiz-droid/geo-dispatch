@@ -20,6 +20,7 @@ function AdminView() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -106,8 +107,16 @@ function AdminView() {
               {vehicles.map(v => {
                 const s = statuses.find(stat => stat.vehicle_id === v.id);
                 const isTrailVisible = visibleTrails[v.id];
+                const isSelected = selectedVehicleId === v.id;
+
                 return (
-                  <div key={v.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100 flex justify-between items-start group">
+                  <div 
+                    key={v.id} 
+                    onClick={() => setSelectedVehicleId(v.id)}
+                    className={`p-3 rounded-lg border transition-all cursor-pointer flex justify-between items-start group ${
+                      isSelected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-gray-50 border-gray-100 hover:border-gray-200'
+                    }`}
+                  >
                     <div className="flex-1">
                       <div className="flex justify-between items-center mb-1">
                         <span className="font-bold text-gray-900">{v.patente}</span>
@@ -118,7 +127,10 @@ function AdminView() {
                       <p className="text-xs text-gray-500">{v.modelo}</p>
                     </div>
                     <button 
-                      onClick={() => toggleTrail(v.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleTrail(v.id);
+                      }}
                       className={`ml-3 p-2 rounded-lg transition-all ${isTrailVisible ? 'bg-blue-100 text-blue-600' : 'text-gray-300 hover:bg-gray-100'}`}
                       title={isTrailVisible ? "Ocultar recorrido" : "Mostrar recorrido (2h)"}
                     >
@@ -132,9 +144,9 @@ function AdminView() {
           <div className="flex-1 relative">
             <DispatchMap 
               vehicles={vehicles} 
+              selectedVehicleId={selectedVehicleId}
               statuses={statuses.map(s => ({
                 ...s,
-                // Solo pasar el historial si el trail está activo para ese vehículo
                 history: visibleTrails[s.vehicle_id] ? s.history : []
               }))} 
             />

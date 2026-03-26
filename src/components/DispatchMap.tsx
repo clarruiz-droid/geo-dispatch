@@ -1,5 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import React from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import React, { useEffect } from 'react';
 import L from 'leaflet';
 import type { VehicleLocationStatus, Vehicle } from '../types';
 
@@ -12,6 +12,20 @@ interface ExtendedStatus extends VehicleLocationStatus {
 interface Props {
   vehicles: Vehicle[];
   statuses: ExtendedStatus[];
+  selectedVehicleId?: string | null;
+}
+
+// Componente para controlar el movimiento del mapa
+function MapController({ center }: { center: [number, number] | null }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (center) {
+      map.setView(center, 16, { animate: true });
+    }
+  }, [center, map]);
+  
+  return null;
 }
 
 const getStatusColor = (status: string, isOffline?: boolean) => {
@@ -51,8 +65,14 @@ const createCustomIcon = (status: string, patente: string, isAlert?: boolean, is
   });
 };
 
-export const DispatchMap: React.FC<Props> = ({ vehicles, statuses }) => {
+export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehicleId }) => {
   const center: [number, number] = [-34.6037, -58.3816];
+  
+  // Buscar la ubicación del vehículo seleccionado para centrar
+  const selectedStatus = selectedVehicleId ? statuses.find(s => s.vehicle_id === selectedVehicleId) : null;
+  const mapCenter: [number, number] | null = (selectedStatus?.lat && selectedStatus?.lng) 
+    ? [selectedStatus.lat, selectedStatus.lng] 
+    : null;
 
   return (
     <div className="h-full w-full rounded-xl overflow-hidden border border-gray-200 shadow-inner">
@@ -61,6 +81,9 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses }) => {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        
+        {/* Controlador de cámara */}
+        <MapController center={mapCenter} />
         
         {statuses.map((status) => {
           const vehicle = vehicles.find(v => v.id === status.vehicle_id);
