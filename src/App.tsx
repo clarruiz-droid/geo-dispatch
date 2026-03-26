@@ -11,7 +11,7 @@ import { AdminNavbar } from './components/AdminNavbar';
 import { UserManagement } from './components/UserManagement';
 import { VehicleManagement } from './components/VehicleManagement';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Users } from 'lucide-react';
+import { LogOut, Truck, Users, Eye, EyeOff, Map as MapIcon } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {
@@ -19,19 +19,38 @@ function AdminView() {
   const [managementTab, setManagementTab] = useState<'users' | 'vehicles'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
+  const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchInitialData = async () => {
+      // 1. Cargar Vehículos
       const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
       if (vData) setVehicles(vData);
 
+      // 2. Cargar Estado Actual
       const { data: sData } = await supabase.from('gd_vehicle_status').select('*');
+      
+      // 3. Cargar Historial de las últimas 2 horas
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const { data: hData } = await supabase
+        .from('gd_gps_history')
+        .select('vehicle_id, lat, lng, captured_at')
+        .gte('captured_at', twoHoursAgo)
+        .order('captured_at', { ascending: true });
+
       if (sData) {
-        setStatuses(sData.map(s => ({
-          ...s,
-          history: s.lat && s.lng ? [[s.lat, s.lng]] : [],
-          is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000
-        })));
+        setStatuses(sData.map(s => {
+          // Filtrar historial para este vehículo
+          const vehicleHistory = hData 
+            ? hData.filter(h => h.vehicle_id === s.vehicle_id).map(h => [h.lat, h.lng] as [number, number])
+            : [];
+          
+          return {
+            ...s,
+            history: vehicleHistory,
+            is_offline: (Date.now() - new Date(s.last_updated || s.updated_at).getTime()) > 60000
+          };
+        }));
       }
     };
 
@@ -46,7 +65,12 @@ function AdminView() {
             const now = new Date().toISOString();
             if (index === -1) return [...prev, { ...updated, history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], updated_at: now }];
             const current = prev[index];
-            const newHistory = updated.lat && updated.lng ? [...current.history.slice(-19), [updated.lat, updated.lng] as [number, number]] : current.history;
+            
+            // Actualizamos la posición actual en el historial solo si cambió significativamente o pasó tiempo
+            const newHistory = updated.lat && updated.lng 
+              ? [...current.history, [updated.lat, updated.lng] as [number, number]] 
+              : current.history;
+
             const newStatuses = [...prev];
             newStatuses[index] = { ...updated, history: newHistory, updated_at: now, is_offline: false };
             return newStatuses;
@@ -63,6 +87,10 @@ function AdminView() {
     };
   }, []);
 
+  const toggleTrail = (vehicleId: string) => {
+    setVisibleTrails(prev => ({ ...prev, [vehicleId]: !prev[vehicleId] }));
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
       <AdminNavbar activeTab={activeTab} onTabChange={setActiveTab} />
@@ -71,24 +99,46 @@ function AdminView() {
         <div className="flex flex-col flex-1 lg:flex-row overflow-hidden">
           <div className="w-full lg:w-80 bg-white border-b lg:border-r border-gray-200 shadow-sm z-10 p-4 overflow-y-auto">
             <div className="space-y-4">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
+              <div className="flex justify-between items-center">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
+                <MapIcon className="w-3 h-3 text-gray-300" />
+              </div>
               {vehicles.map(v => {
                 const s = statuses.find(stat => stat.vehicle_id === v.id);
+                const isTrailVisible = visibleTrails[v.id];
                 return (
-                  <div key={v.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-gray-900">{v.patente}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS'}
-                      </span>
+                  <div key={v.id} className="p-3 bg-gray-50 rounded-lg border border-gray-100 flex justify-between items-start group">
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold text-gray-900">{v.patente}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">{v.modelo}</p>
                     </div>
-                    <p className="text-xs text-gray-500">{v.modelo}</p>
+                    <button 
+                      onClick={() => toggleTrail(v.id)}
+                      className={`ml-3 p-2 rounded-lg transition-all ${isTrailVisible ? 'bg-blue-100 text-blue-600' : 'text-gray-300 hover:bg-gray-100'}`}
+                      title={isTrailVisible ? "Ocultar recorrido" : "Mostrar recorrido (2h)"}
+                    >
+                      {isTrailVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="flex-1 relative"><DispatchMap vehicles={vehicles} statuses={statuses} /></div>
+          <div className="flex-1 relative">
+            <DispatchMap 
+              vehicles={vehicles} 
+              statuses={statuses.map(s => ({
+                ...s,
+                // Solo pasar el historial si el trail está activo para ese vehículo
+                history: visibleTrails[s.vehicle_id] ? s.history : []
+              }))} 
+            />
+          </div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
