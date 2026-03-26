@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Truck, Lock, Mail, Loader2 } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // Email o DNI
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,13 +13,40 @@ export const Login: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
+    let emailToAuth = identifier.trim();
+
+    // Lógica para detectar si es un DNI (solo números)
+    const isDni = /^\d+$/.test(emailToAuth);
+
+    if (isDni) {
+      try {
+        // Buscamos el perfil que coincida con ese DNI
+        const { data, error: profileError } = await supabase
+          .from('gd_profiles')
+          .select('email')
+          .eq('dni', emailToAuth)
+          .single();
+
+        if (profileError || !data) {
+          throw new Error('No se encontró ningún usuario con ese DNI.');
+        }
+        emailToAuth = data.email;
+      } catch (err: any) {
+        setError(err.message);
+        setLoading(false);
+        return;
+      }
+    }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: emailToAuth,
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (authError) {
+      setError(authError.message === 'Invalid login credentials' 
+        ? 'Credenciales inválidas. Verifica tus datos.' 
+        : authError.message);
       setLoading(false);
     }
   };
@@ -37,29 +64,29 @@ export const Login: React.FC = () => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           {error && (
-            <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg flex items-center gap-2">
-              <Lock className="w-4 h-4" />
+            <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-lg flex items-center gap-2 text-left">
+              <Lock className="w-4 h-4 shrink-0" />
               {error}
             </div>
           )}
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Email</label>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1 block text-left">Email o DNI</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="email"
+                type="text"
                 required
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-11 pr-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tu@email.com o DNI"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Contraseña</label>
+          <div className="space-y-2 text-left">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1 block text-left">Contraseña</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -84,7 +111,7 @@ export const Login: React.FC = () => {
 
         <div className="mt-8 pt-6 border-t border-gray-50 flex flex-col items-center gap-2">
           <p className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-            v0.4.5
+            v0.4.6
           </p>
           <p className="text-center text-[10px] text-gray-300 italic">
             Si no tienes cuenta, contacta al administrador del sistema.

@@ -10,13 +10,14 @@ import { DispatchMap } from './components/DispatchMap';
 import { AdminNavbar } from './components/AdminNavbar';
 import { UserManagement } from './components/UserManagement';
 import { VehicleManagement } from './components/VehicleManagement';
+import { StatusHistory } from './components/StatusHistory';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Users, Eye, EyeOff, Map as MapIcon } from 'lucide-react';
+import { LogOut, Truck, Users, Eye, EyeOff, Map as MapIcon, Clock } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {
   const [activeTab, setActiveTab] = useState<'map' | 'management'>('map');
-  const [managementTab, setManagementTab] = useState<'users' | 'vehicles'>('vehicles');
+  const [managementTab, setManagementTab] = useState<'users' | 'vehicles' | 'history'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
@@ -155,10 +156,10 @@ function AdminView() {
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-6xl mx-auto space-y-6">
-            <div className="flex gap-4 mb-8">
+            <div className="flex gap-4 mb-8 overflow-x-auto pb-2">
               <button
                 onClick={() => setManagementTab('vehicles')}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${
                   managementTab === 'vehicles' 
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
                     : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
@@ -168,7 +169,7 @@ function AdminView() {
               </button>
               <button
                 onClick={() => setManagementTab('users')}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${
                   managementTab === 'users' 
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
                     : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
@@ -176,9 +177,21 @@ function AdminView() {
               >
                 <Users className="w-5 h-5" /> Usuarios
               </button>
+              <button
+                onClick={() => setManagementTab('history')}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${
+                  managementTab === 'history' 
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
+                    : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
+                }`}
+              >
+                <Clock className="w-5 h-5" /> Historial
+              </button>
             </div>
 
-            {managementTab === 'vehicles' ? <VehicleManagement /> : <UserManagement />}
+            {managementTab === 'vehicles' && <VehicleManagement />}
+            {managementTab === 'users' && <UserManagement />}
+            {managementTab === 'history' && <StatusHistory />}
           </div>
         </div>
       )}
@@ -283,17 +296,28 @@ function DriverView({ roleName, profileId, fullName }: { roleName?: string; prof
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50">
-      <header className="flex items-center justify-between py-4">
-        <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">GeoDispatch <span className="text-blue-600">Chofer</span></h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-            Sesión: <span className="text-blue-600">{fullName || 'Cargando...'}</span>
-          </p>
-          {roleName && roleName !== 'driver' && (
-            <p className="text-[10px] font-bold text-rose-500 mt-1 uppercase">Rol detectado: {roleName} (No es admin)</p>
-          )}
+      <header className="flex items-center justify-between py-6">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-blue-600 rounded-2xl shadow-lg shadow-blue-100 flex items-center justify-center text-white text-xl font-black">
+            {fullName ? fullName.charAt(0).toUpperCase() : <User className="w-6 h-6" />}
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Bienvenido</p>
+            <h1 className="text-2xl font-black text-gray-900 tracking-tight leading-tight">
+              {fullName || 'Chofer'}
+            </h1>
+            {roleName && roleName !== 'driver' && (
+              <p className="text-[10px] font-bold text-rose-500 uppercase mt-0.5">Acceso: {roleName}</p>
+            )}
+          </div>
         </div>
-        <button onClick={() => supabase.auth.signOut()} className="p-2 text-gray-400 hover:text-rose-500"><LogOut className="w-5 h-5" /></button>
+        <button 
+          onClick={() => supabase.auth.signOut()} 
+          className="p-3 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+          title="Cerrar Sesión"
+        >
+          <LogOut className="w-6 h-6" />
+        </button>
       </header>
       {!selectedVehicle ? (
         <VehicleSelector vehicles={vehicles} onSelect={setSelectedVehicle} />
