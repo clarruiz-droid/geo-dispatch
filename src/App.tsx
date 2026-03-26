@@ -13,7 +13,7 @@ import { UserManagement } from './components/UserManagement';
 import { VehicleManagement } from './components/VehicleManagement';
 import { StatusHistory } from './components/StatusHistory';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Users, User, Eye, EyeOff, Map as MapIcon, Clock, AlertTriangle, Bell, BellOff } from 'lucide-react';
+import { LogOut, Truck, Users, User, Eye, EyeOff, Clock, AlertTriangle, Bell, BellOff } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {
@@ -170,7 +170,7 @@ function AdminView() {
 }
 
 // --- VISTA DEL CHOFER ---
-function DriverView({ roleName, profileId, fullName }: { roleName?: string; profileId?: string; fullName?: string | null }) {
+function DriverView({ profileId, fullName }: { profileId?: string; fullName?: string | null }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isEmergency, setIsEmergency] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(() => {
@@ -340,7 +340,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <Route path="/" element={<DriverView roleName={dbRole} profileId={session?.user?.id} fullName={profile?.full_name} />} />
+              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}
