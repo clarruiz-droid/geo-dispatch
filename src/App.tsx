@@ -69,10 +69,18 @@ function AdminView() {
     fetchInitialData();
 
     const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gd_vehicle_status' }, () => {
+      .channel('fleet-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'gd_vehicle_status' 
+      }, (payload) => {
+          console.log('[Realtime] Cambio detectado:', payload.eventType, payload.new);
           fetchInitialData();
-      }).subscribe();
+      })
+      .subscribe((status) => {
+        console.log('[Realtime] Estado de conexión:', status);
+      });
 
     const offlineInterval = setInterval(() => {
       setStatuses(prev => prev.map(s => ({ ...s, is_offline: (Date.now() - new Date(s.updated_at).getTime()) > 60000 })));
