@@ -6,13 +6,14 @@ import { VehicleSelector } from './components/VehicleSelector';
 import { StatusToggle } from './components/StatusToggle';
 import { GPSMonitor } from './components/GPSMonitor';
 import { useGeolocation } from './hooks/useGeolocation';
+import { useWakeLock } from './hooks/useWakeLock';
 import { DispatchMap } from './components/DispatchMap';
 import { AdminNavbar } from './components/AdminNavbar';
 import { UserManagement } from './components/UserManagement';
 import { VehicleManagement } from './components/VehicleManagement';
 import { StatusHistory } from './components/StatusHistory';
 import type { Vehicle, VehicleStatus, VehicleLocationStatus, Profile } from './types';
-import { LogOut, Truck, Users, User, Eye, EyeOff, Map as MapIcon, Clock } from 'lucide-react';
+import { LogOut, Truck, Users, User, Eye, EyeOff, Map as MapIcon, Clock, AlertTriangle, Bell, BellOff } from 'lucide-react';
 
 // --- VISTA DEL ADMINISTRADOR ---
 function AdminView() {
@@ -22,6 +23,19 @@ function AdminView() {
   const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const [muteSiren, setMuteSiren] = useState(false);
+
+  // Sirena de emergencia
+  useEffect(() => {
+    const hasEmergency = statuses.some(s => s.is_emergency && !s.is_offline);
+    const siren = document.getElementById('emergency-siren') as HTMLAudioElement;
+    
+    if (hasEmergency && !muteSiren) {
+      siren?.play().catch(() => {});
+    } else {
+      siren?.pause();
+    }
+  }, [statuses, muteSiren]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -29,8 +43,10 @@ function AdminView() {
       const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
       if (vData) setVehicles(vData);
 
-      // 2. Cargar Estado Actual
-      const { data: sData } = await supabase.from('gd_vehicle_status').select('*');
+      // 2. Cargar Estado Actual con nombre de chofer
+      const { data: sData } = await supabase
+        .from('gd_vehicle_status')
+        .select('*, profile:updated_by(full_name)');
       
       // 3. Cargar Historial de las últimas 2 horas
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -95,6 +111,13 @@ function AdminView() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
+      {/* Sirena de emergencia (Audio oculto) */}
+      <audio 
+        id="emergency-siren"
+        src="https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3" 
+        loop 
+      />
+
       <AdminNavbar activeTab={activeTab} onTabChange={setActiveTab} />
       
       {activeTab === 'map' ? (
@@ -103,7 +126,13 @@ function AdminView() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
-                <MapIcon className="w-3 h-3 text-gray-300" />
+                <button 
+                  onClick={() => setMuteSiren(!muteSiren)} 
+                  className={`p-1.5 rounded-lg transition-all ${muteSiren ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-blue-600'}`}
+                  title={muteSiren ? "Activar sonido de alerta" : "Silenciar alertas"}
+                >
+                  {muteSiren ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                </button>
               </div>
               {vehicles.map(v => {
                 const s = statuses.find(stat => stat.vehicle_id === v.id);
@@ -115,14 +144,18 @@ function AdminView() {
                     key={v.id} 
                     onClick={() => setSelectedVehicleId(v.id)}
                     className={`p-3 rounded-lg border transition-all cursor-pointer flex justify-between items-start group ${
-                      isSelected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-gray-50 border-gray-100 hover:border-gray-200'
+                      s?.is_emergency ? 'bg-rose-50 border-rose-200 animate-pulse' : 
+                      (isSelected ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-gray-50 border-gray-100 hover:border-gray-200')
                     }`}
                   >
                     <div className="flex-1">
                       <div className="flex justify-between items-center mb-1">
                         <span className="font-bold text-gray-900">{v.patente}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700'}`}>
-                          {s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS'}
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          s?.is_emergency ? 'bg-rose-600 text-white' :
+                          (s?.is_offline ? 'bg-gray-200 text-gray-500' : 'bg-emerald-100 text-emerald-700')
+                        }`}>
+                          {s?.is_emergency ? 'SOS' : (s?.is_offline ? 'OFFLINE' : s?.status || 'SIN DATOS')}
                         </span>
                       </div>
                       <p className="text-xs text-gray-500">{v.modelo}</p>
@@ -202,6 +235,7 @@ function AdminView() {
 // --- VISTA DEL CHOFER ---
 function DriverView({ roleName, profileId, fullName }: { roleName?: string; profileId?: string; fullName?: string | null }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [isEmergency, setIsEmergency] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(() => {
     const saved = localStorage.getItem('geo_dispatch_vehicle');
     return saved ? JSON.parse(saved) : null;
@@ -212,14 +246,37 @@ function DriverView({ roleName, profileId, fullName }: { roleName?: string; prof
 
   const isTracking = status === 'operativo' || status === 'demora';
   const { location, error, pendingCount, getPendingData, clearPending } = useGeolocation(isTracking);
+  
+  // Mantener pantalla encendida cuando se está trackeando
+  useWakeLock(isTracking);
 
   useEffect(() => {
     const fetchVehicles = async () => {
-      const { data } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
-      if (data) setVehicles(data);
+      // 1. Obtener todos los vehículos activos
+      const { data: allVehicles } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
+      
+      // 2. Obtener los estados actuales para ver quién está ocupando qué
+      const { data: currentStatuses } = await supabase.from('gd_vehicle_status').select('vehicle_id, updated_at, updated_by');
+
+      if (allVehicles) {
+        // 3. Filtrar: Disponible si no está en statuses O si el último update fue hace > 5 min O si es el mismo usuario
+        const now = Date.now();
+        const available = allVehicles.filter(v => {
+          const status = currentStatuses?.find(s => s.vehicle_id === v.id);
+          if (!status) return true; // Nadie lo ha usado nunca
+
+          const lastUpdate = new Date(status.updated_at).getTime();
+          const isMe = status.updated_by === profileId;
+          const isRecent = (now - lastUpdate) < 300000; // 5 minutos
+
+          return isMe || !isRecent; // Disponible si soy yo o si no es reciente
+        });
+
+        setVehicles(available);
+      }
     };
     fetchVehicles();
-  }, []);
+  }, [profileId]);
 
   // --- LÓGICA DE SINCRONIZACIÓN STORE & FORWARD ---
   useEffect(() => {
@@ -256,19 +313,38 @@ function DriverView({ roleName, profileId, fullName }: { roleName?: string; prof
     if (selectedVehicle) localStorage.setItem('geo_dispatch_vehicle', JSON.stringify(selectedVehicle));
     else localStorage.removeItem('geo_dispatch_vehicle');
   }, [selectedVehicle]);
+useEffect(() => {
+  localStorage.setItem('geo_dispatch_status', status);
+  if (selectedVehicle) {
+    supabase.from('gd_vehicle_status').upsert({ 
+      vehicle_id: selectedVehicle.id, 
+      status, 
+      is_emergency: isEmergency,
+      updated_at: new Date().toISOString(),
+      updated_by: profileId
+    }).then();
+  }
+}, [status, selectedVehicle, profileId, isEmergency]);
 
-  useEffect(() => {
-    localStorage.setItem('geo_dispatch_status', status);
-    if (selectedVehicle) {
-      supabase.from('gd_vehicle_status').upsert({ 
-        vehicle_id: selectedVehicle.id, 
-        status, 
+const toggleEmergency = () => {
+  const nextState = !isEmergency;
+  setIsEmergency(nextState);
+  if (nextState) {
+    if (location && selectedVehicle) {
+      supabase.from('gd_vehicle_status').upsert({
+        vehicle_id: selectedVehicle.id,
+        status,
+        lat: location.lat,
+        lng: location.lng,
+        is_emergency: true,
         updated_at: new Date().toISOString(),
         updated_by: profileId
       }).then();
     }
-  }, [status, selectedVehicle, profileId]);
+  }
+};
 
+useEffect(() => {
   // --- GUARDADO DE PUNTO GPS EN HISTORIAL ---
   useEffect(() => {
     if (selectedVehicle && location && navigator.onLine && profileId) {
@@ -296,6 +372,15 @@ function DriverView({ roleName, profileId, fullName }: { roleName?: string; prof
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50">
+      {/* Audio silencioso para mantener vivo el proceso en segundo plano */}
+      {isTracking && (
+        <audio 
+          src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
+          autoPlay 
+          loop 
+        />
+      )}
+      
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-blue-600 rounded-2xl shadow-lg shadow-blue-100 flex items-center justify-center text-white text-xl font-black">
@@ -334,6 +419,23 @@ function DriverView({ roleName, profileId, fullName }: { roleName?: string; prof
             <button onClick={() => setSelectedVehicle(null)} className="text-sm text-blue-600 font-bold">Cambiar</button>
           </div>
           <StatusToggle currentStatus={status} onChange={setStatus} />
+          
+          {/* BOTÓN DE PÁNICO */}
+          <button
+            onClick={toggleEmergency}
+            className={`w-full py-8 rounded-3xl font-black text-2xl flex flex-col items-center justify-center gap-2 shadow-2xl transition-all active:scale-95 ${
+              isEmergency 
+                ? 'bg-rose-600 text-white animate-pulse' 
+                : 'bg-white text-rose-600 border-4 border-rose-600'
+            }`}
+          >
+            <AlertTriangle className={`w-12 h-12 ${isEmergency ? 'animate-bounce' : ''}`} />
+            {isEmergency ? 'EMERGENCIA ACTIVA' : 'BOTÓN DE PÁNICO'}
+            <p className="text-[10px] font-bold opacity-60">
+              {isEmergency ? 'Toca para desactivar' : 'Solo emergencias reales'}
+            </p>
+          </button>
+
           <GPSMonitor location={location} error={error} isTracking={isTracking} pendingCount={pendingCount} />
         </div>
       )}

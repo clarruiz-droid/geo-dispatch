@@ -7,6 +7,9 @@ interface ExtendedStatus extends VehicleLocationStatus {
   history: [number, number][];
   is_alert?: boolean;
   is_offline?: boolean;
+  profile?: {
+    full_name: string;
+  } | null;
 }
 
 interface Props {
@@ -38,8 +41,8 @@ const getStatusColor = (status: string, isOffline?: boolean) => {
   }
 };
 
-const createCustomIcon = (status: string, patente: string, isAlert?: boolean, isOffline?: boolean) => {
-  const color = isOffline ? '#94a3b8' : (isAlert ? '#e11d48' : getStatusColor(status));
+const createCustomIcon = (status: string, patente: string, isAlert?: boolean, isOffline?: boolean, isEmergency?: boolean) => {
+  const color = isEmergency ? '#e11d48' : (isOffline ? '#94a3b8' : (isAlert ? '#e11d48' : getStatusColor(status)));
   const opacity = isOffline ? '0.6' : '1';
   
   return L.divIcon({
@@ -48,16 +51,22 @@ const createCustomIcon = (status: string, patente: string, isAlert?: boolean, is
       <style>
         @keyframes custom-pulse {
           0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); }
-          70% { transform: scale(1.1); box-shadow: 0 0 0 15px rgba(225, 29, 72, 0); }
+          70% { transform: scale(1.2); box-shadow: 0 0 0 20px rgba(225, 29, 72, 0); }
           100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
         }
         .pulse-alert {
           animation: custom-pulse 1.5s infinite;
           border-color: #fb7185 !important;
         }
+        .pulse-emergency {
+          animation: custom-pulse 0.6s infinite;
+          border-color: #ffffff !important;
+          background-color: #e11d48 !important;
+          z-index: 999;
+        }
       </style>
-      <div class="${isAlert && !isOffline ? 'pulse-alert' : ''}" style="background-color: ${color}; opacity: ${opacity}; width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 10px; transition: all 0.3s;">
-        ${patente.slice(-3)}
+      <div class="${isEmergency ? 'pulse-emergency' : (isAlert && !isOffline ? 'pulse-alert' : '')}" style="background-color: ${color}; opacity: ${opacity}; width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 10px; transition: all 0.3s;">
+        ${isEmergency ? 'SOS' : patente.slice(-3)}
       </div>
     `,
     iconSize: [40, 40],
@@ -105,21 +114,31 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehic
               
               <Marker 
                 position={[status.lat, status.lng]}
-                icon={createCustomIcon(status.status, vehicle.patente, status.is_alert, status.is_offline)}
+                icon={createCustomIcon(status.status, vehicle.patente, status.is_alert, status.is_offline, status.is_emergency)}
               >
                 <Popup>
-                  <div className="p-1">
-                    <p className="font-bold text-lg">{vehicle.patente}</p>
-                    {status.is_offline && (
-                      <p className="text-gray-500 font-bold text-[10px] uppercase">📡 SIN SEÑAL (+1 min)</p>
+                  <div className="p-1 min-w-[120px]">
+                    {status.is_emergency && (
+                      <div className="mb-2 p-2 bg-rose-600 text-white rounded-lg text-center animate-pulse">
+                        <p className="font-black text-xs uppercase tracking-widest">🚨 EMERGENCIA 🚨</p>
+                      </div>
                     )}
-                    {status.is_alert && !status.is_offline && (
-                      <p className="text-rose-600 font-bold text-[10px] animate-bounce uppercase">⚠️ Demora Excesiva</p>
-                    )}
-                    <p className="text-gray-600 italic text-xs">{vehicle.modelo}</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(status.status, status.is_offline) }} />
-                      <span className="capitalize font-medium text-sm">{status.status}</span>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Vehículo y Chofer</p>
+                    <p className="font-bold text-lg leading-tight">{vehicle.patente}</p>
+                    <p className="text-blue-600 font-bold text-sm mb-2">{status.profile?.full_name || 'Sin chofer asignado'}</p>
+                    
+                    <div className="space-y-1.5 border-t border-gray-100 pt-2 mt-1">
+                      {status.is_offline && (
+                        <p className="text-gray-500 font-bold text-[10px] uppercase flex items-center gap-1">📡 SIN SEÑAL (+1 min)</p>
+                      )}
+                      {status.is_alert && !status.is_offline && (
+                        <p className="text-rose-600 font-bold text-[10px] animate-bounce uppercase flex items-center gap-1">⚠️ Demora Excesiva</p>
+                      )}
+                      <p className="text-gray-500 italic text-[11px]">{vehicle.modelo}</p>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(status.status, status.is_offline) }} />
+                        <span className="capitalize font-bold text-gray-700 text-xs">{status.status}</span>
+                      </div>
                     </div>
                   </div>
                 </Popup>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../types';
 import { User, Shield, Loader2, RefreshCw, Pencil, Trash2, X, Check, IdCard, Plus, Mail, Key } from 'lucide-react';
@@ -100,8 +101,15 @@ export const UserManagement = () => {
         if (error) throw error;
       } else {
         // --- CREAR NUEVO USUARIO ---
-        // 1. Registrar en Auth enviando metadatos para el trigger
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        // 1. Crear un cliente temporal SIN persistencia para evitar cerrar la sesión del admin
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: { persistSession: false }
+        });
+
+        // 2. Registrar en Auth enviando metadatos para el trigger
+        const { data: authData, error: authError } = await tempClient.auth.signUp({
           email: formData.email,
           password: formData.password,
           options: {

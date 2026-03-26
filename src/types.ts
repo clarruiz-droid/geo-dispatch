@@ -17,7 +17,9 @@ export type VehicleLocationStatus = AuditFields & {
   status: VehicleStatus;
   lat: number | null;
   lng: number | null;
+  created_by: string | null;
   updated_by: string | null;
+  is_emergency: boolean;
 }
 
 export type StatusLog = AuditFields & {
