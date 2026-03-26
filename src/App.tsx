@@ -20,7 +20,8 @@ function AdminView() {
   const [activeTab, setActiveTab] = useState<'map' | 'management'>('map');
   const [managementTab, setManagementTab] = useState<'users' | 'vehicles' | 'history'>('vehicles');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean })[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [statuses, setStatuses] = useState<(VehicleLocationStatus & { history: [number, number][]; is_offline?: boolean; is_alert?: boolean; profile?: { full_name: string } | null })[]>([]);
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [muteSiren, setMuteSiren] = useState(false);
@@ -41,8 +42,10 @@ function AdminView() {
     const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
     if (vData) setVehicles(vData);
 
-    const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
-    
+    const { data: pData } = await supabase.from('gd_profiles').select('*');
+    if (pData) setProfiles(pData);
+
+    const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');    
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { data: hData } = await supabase
       .from('gd_gps_history')
@@ -82,16 +85,19 @@ function AdminView() {
             const index = prev.findIndex(s => s.vehicle_id === updated.vehicle_id);
             const now = new Date().toISOString();
             
-            // Si no existe, lo añadimos
+            // Buscar nombre del chofer en el cache local
+            const chofer = profiles.find(p => p.id === updated.updated_by);
+            const profileInfo = chofer ? { full_name: chofer.full_name || 'Desconocido' } : null;
+
             if (index === -1) {
               return [...prev, { 
                 ...updated, 
+                profile: profileInfo,
                 history: updated.lat && updated.lng ? [[updated.lat, updated.lng]] : [], 
                 updated_at: now 
               }];
             }
 
-            // Si existe, actualizamos solo ese vehículo preservando el historial
             const current = prev[index];
             const newHistory = updated.lat && updated.lng 
               ? [...current.history, [updated.lat, updated.lng] as [number, number]] 
@@ -99,9 +105,10 @@ function AdminView() {
 
             const newStatuses = [...prev];
             newStatuses[index] = { 
-              ...current, // Mantenemos datos que no vienen en el payload (como el profile join inicial si lo hubiera)
+              ...current,
               ...updated, 
-              history: newHistory.slice(-50), // Mantenemos los últimos 50 puntos
+              profile: profileInfo || current.profile,
+              history: newHistory.slice(-50),
               updated_at: now, 
               is_offline: false 
             };
