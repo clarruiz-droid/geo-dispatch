@@ -187,7 +187,7 @@ function AdminView() {
 }
 
 // --- VISTA DEL CHOFER ---
-function DriverView({ roleName, profileId }: { roleName?: string; profileId?: string }) {
+function DriverView({ roleName, profileId, fullName }: { roleName?: string; profileId?: string; fullName?: string | null }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(() => {
     const saved = localStorage.getItem('geo_dispatch_vehicle');
@@ -286,6 +286,9 @@ function DriverView({ roleName, profileId }: { roleName?: string; profileId?: st
       <header className="flex items-center justify-between py-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">GeoDispatch <span className="text-blue-600">Chofer</span></h1>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+            Sesión: <span className="text-blue-600">{fullName || 'Cargando...'}</span>
+          </p>
           {roleName && roleName !== 'driver' && (
             <p className="text-[10px] font-bold text-rose-500 mt-1 uppercase">Rol detectado: {roleName} (No es admin)</p>
           )}
@@ -380,7 +383,7 @@ export default function App() {
           ) : (
             // RUTAS DE CHOFER
             <>
-              <Route path="/" element={<DriverView roleName={dbRole} profileId={session?.user?.id} />} />
+              <Route path="/" element={<DriverView roleName={dbRole} profileId={session?.user?.id} fullName={profile?.full_name} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

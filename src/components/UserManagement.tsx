@@ -35,13 +35,21 @@ export const UserManagement = () => {
       }
     }
 
-    const { data: pData } = await supabase
+    const { data: pData, error: pError } = await supabase
       .from('gd_profiles')
       .select('*, role:gd_roles(name)')
       .is('deleted_at', null)
       .order('full_name', { ascending: true });
     
-    if (pData) setProfiles(pData);
+    if (pError) {
+      console.error('[UserManagement] Error cargando perfiles:', pError);
+      alert(`Error al cargar usuarios: ${pError.message}`);
+    }
+
+    if (pData) {
+      console.log('[UserManagement] Perfiles cargados:', pData.length);
+      setProfiles(pData);
+    }
     setLoading(false);
   };
 
