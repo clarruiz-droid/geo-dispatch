@@ -504,6 +504,13 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
     }
   };
 
+  const handleLogout = async () => {
+    // 1. Limpiar vehículo seleccionado de la memoria local
+    localStorage.removeItem('geo_dispatch_vehicle');
+    // 2. Cerrar sesión en Supabase
+    await supabase.auth.signOut();
+  };
+
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50 text-left">
       {isTracking && <audio src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" autoPlay loop />}
@@ -521,7 +528,10 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
             </div>
           </div>
         </div>
-        <button onClick={() => supabase.auth.signOut()} className="p-3 text-gray-400 hover:text-rose-500 transition-all"><LogOut className="w-6 h-6" /></button>
+        <button onClick={handleLogout} className="p-3 text-gray-400 hover:text-rose-500 transition-all flex flex-col items-center gap-1">
+          <LogOut className="w-6 h-6" />
+          <span className="text-[8px] font-bold uppercase">Salir</span>
+        </button>
       </header>
       {!selectedVehicle ? (
         <VehicleSelector vehicles={vehicles} onSelect={handleVehicleSelect} />
