@@ -90,7 +90,7 @@ function AdminView() {
       if (vData) {
         setVehicles(vData);
         
-        // 4. CONSTRUCCIÓN DE LA FLOTA
+        // 4. CONSTRUCCIÓN DE LA FLOTA (Usando exclusivamente gd_vehicle_status como fuente de verdad)
         const fleetStatuses = vData.map((v) => {
           const current = sData?.find(s => s.vehicle_id === v.id);
           
@@ -228,7 +228,7 @@ function AdminView() {
           vehicle_patente: vehicle?.patente || 'Desconocido',
           chofer_name: profilesRef.current.find(prof => prof.id === p.profile_id)?.full_name || 'Desconocido'
         })));
-        setActiveTab('map');
+        setActiveTab('map'); // Cambiar a la vista del mapa para ver el resultado
       } else {
         alert('No se encontraron datos de GPS para el vehículo en el rango de fechas seleccionado.');
         setHistoricalTrail(null);
@@ -312,6 +312,8 @@ function AdminView() {
 }
 
 // --- VISTA DEL CHOFER ---
+const AUDIO_PING_BASE64 = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
+
 function DriverView({ profileId, fullName }: { profileId?: string; fullName?: string | null }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isEmergency, setIsEmergency] = useState(false);
@@ -512,16 +514,70 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
     }
   };
 
+  const handleReleaseVehicle = async () => {
+    if (!selectedVehicle || !profileId) return;
+    
+    const confirmRelease = window.confirm('¿Estás seguro de que deseas liberar este vehículo? Dejarás de figurar como el chofer asignado.');
+    if (!confirmRelease) return;
+
+    setIsSyncing(true);
+    try {
+      // 1. Actualizar base de datos: quitar chofer y poner en standby
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('gd_vehicle_status').upsert({
+        vehicle_id: selectedVehicle.id,
+        status: 'standby',
+        is_emergency: false,
+        updated_at: now,
+        updated_by: null // Liberamos el vehículo
+      });
+
+      if (!error) {
+        // 2. Insertar en historial el fin de turno
+        await supabase.from('gd_status_history').insert({
+          vehicle_id: selectedVehicle.id,
+          profile_id: profileId,
+          status: 'standby',
+          changed_at: now,
+          lat: lastPos?.lat,
+          lng: lastPos?.lng
+        });
+
+        // 3. Limpiar estado local
+        setSelectedVehicle(null);
+        localStorage.removeItem('geo_dispatch_vehicle');
+        setStatus('standby');
+        setIsEmergency(false);
+      }
+    } catch (err) {
+      console.error('Error al liberar vehículo:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleLogout = async () => {
-    // 1. Limpiar vehículo seleccionado de la memoria local
+    // Si hay un vehículo seleccionado, preguntamos si desea liberarlo antes de salir
+    if (selectedVehicle) {
+      const shouldRelease = window.confirm('¿Deseas liberar el vehículo antes de cerrar sesión?');
+      if (shouldRelease) {
+        const now = new Date().toISOString();
+        await supabase.from('gd_vehicle_status').upsert({
+          vehicle_id: selectedVehicle.id,
+          status: 'standby',
+          is_emergency: false,
+          updated_at: now,
+          updated_by: null
+        });
+      }
+    }
     localStorage.removeItem('geo_dispatch_vehicle');
-    // 2. Cerrar sesión en Supabase
     await supabase.auth.signOut();
   };
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6 min-h-screen bg-gray-50 text-left">
-      {isTracking && <audio src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" autoPlay loop />}
+      {isTracking && <audio src={AUDIO_PING_BASE64} autoPlay loop />}
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-blue-600 rounded-2xl shadow-lg flex items-center justify-center text-white text-xl font-black">{fullName ? fullName.charAt(0).toUpperCase() : <User className="w-6 h-6" />}</div>
@@ -555,7 +611,15 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
             <button onClick={handleReleaseVehicle} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold uppercase hover:bg-rose-100 transition-colors">Liberar Vehículo</button>
           </div>
           <StatusToggle currentStatus={status} onChange={setStatus} />
-          <button onClick={toggleEmergency} className={`w-full py-8 rounded-3xl font-black text-2xl flex flex-col items-center justify-center gap-2 shadow-2xl transition-all ${isEmergency ? 'bg-rose-600 text-white animate-pulse' : 'bg-white text-rose-600 border-4 border-rose-600'}`}><AlertTriangle className={`w-12 h-12 ${isEmergency ? 'animate-bounce' : ''}`} />{isEmergency ? 'EMERGENCIA ACTIVA' : 'BOTÓN DE PÁNICO'}</button>
+          <button 
+            onClick={toggleEmergency} 
+            className={`w-full py-8 rounded-3xl font-black text-2xl flex flex-col items-center justify-center gap-2 shadow-2xl transition-all ${
+              isEmergency ? 'bg-rose-600 text-white animate-pulse' : 'bg-white text-rose-600 border-4 border-rose-600'
+            }`}
+          >
+            <AlertTriangle className={`w-12 h-12 ${isEmergency ? 'animate-bounce' : ''}`} />
+            {isEmergency ? 'EMERGENCIA ACTIVA' : 'BOTÓN DE PÁNICO'}
+          </button>
           <GPSMonitor location={location} error={error} isTracking={isTracking} pendingCount={pendingCount} />
         </div>
       )}
@@ -572,53 +636,6 @@ export default function App() {
   const fetchProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase.from('gd_profiles').select('*, role:gd_roles(name)').eq('id', userId).single();
-      if (!error) setProfile(data);
-    } catch (err) {}
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) { setLoading(true); fetchProfile(session.user.id); }
-      else { setProfile(null); setLoading(false); }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
-  if (!session) return <Login />;
-
-  const userEmail = session.user.email?.toLowerCase().trim();
-  const dbRole = profile?.role?.name?.toLowerCase().trim() || '';
-  const isAdmin = userEmail === 'admin@geodispatch.com' || dbRole === 'admin';
-
-  return (
-    <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Routes>
-          {isAdmin ? (
-            <>
-              <Route path="/admin" element={<AdminView />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          )}
-        </Routes>
-      </div>
-    </Router>
-  );
-}
-role:gd_roles(name)').eq('id', userId).single();
       if (!error) setProfile(data);
     } catch (err) {}
     finally { setLoading(false); }
