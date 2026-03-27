@@ -53,35 +53,34 @@ function AdminView() {
       
       // 4. CONSTRUCCIÓN EXHAUSTIVA DE LA FLOTA
       const fleetStatuses = await Promise.all(vData.map(async (v) => {
-        // Buscamos si tiene un estado actual
         const current = sData?.find(s => s.vehicle_id === v.id);
         
-        let lat = current?.lat || null;
-        let lng = current?.lng || null;
+        // Buscamos el ÚLTIMO punto de GPS en el historial (Fuente de verdad de ubicación)
+        const { data: lastGps } = await supabase
+          .from('gd_gps_history')
+          .select('lat, lng, captured_at, profile_id')
+          .eq('vehicle_id', v.id)
+          .order('captured_at', { ascending: false })
+          .limit(1);
+
+        const hasLastGps = lastGps && lastGps.length > 0;
+        
+        let lat = hasLastGps ? lastGps[0].lat : (current?.lat || null);
+        let lng = hasLastGps ? lastGps[0].lng : (current?.lng || null);
         let status = (current?.status as VehicleStatus) || 'standby';
         let isEmergency = current?.is_emergency || false;
-        let updatedAt = current?.updated_at || v.created_at;
-        let updatedBy = current?.updated_by || null;
+        
+        // La fecha de actualización debe ser la más reciente entre el estado y el GPS
+        const statusDate = current ? new Date(current.updated_at).getTime() : 0;
+        const gpsDate = hasLastGps ? new Date(lastGps[0].captured_at).getTime() : 0;
+        let updatedAt = (gpsDate > statusDate) ? lastGps[0].captured_at : (current?.updated_at || v.created_at);
+        
+        let updatedBy = current?.updated_by || (hasLastGps ? lastGps[0].profile_id : null);
         let profileInfo = current?.profile || null;
 
-        // BÚSQUEDA PROFUNDA: Si no hay GPS en el estado, buscamos el ÚLTIMO histórico absoluto
-        if (!lat || !lng) {
-          const { data: lastGps } = await supabase
-            .from('gd_gps_history')
-            .select('lat, lng, profile_id')
-            .eq('vehicle_id', v.id)
-            .order('captured_at', { ascending: false })
-            .limit(1);
-          
-          if (lastGps && lastGps.length > 0) {
-            lat = lastGps[0].lat;
-            lng = lastGps[0].lng;
-            // Si no teníamos chofer, intentamos recuperarlo del historial
-            if (!profileInfo && lastGps[0].profile_id) {
-              const chofer = profilesRef.current.find(p => p.id === lastGps[0].profile_id);
-              if (chofer) profileInfo = { full_name: chofer.full_name || 'Desconocido' };
-            }
-          }
+        if (!profileInfo && updatedBy) {
+          const chofer = profilesRef.current.find(p => p.id === updatedBy);
+          if (chofer) profileInfo = { full_name: chofer.full_name || 'Desconocido' };
         }
 
         const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === v.id).map(h => [h.lat, h.lng] as [number, number]) : [];
