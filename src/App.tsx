@@ -552,7 +552,7 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
               <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Truck className="w-5 h-5" /></div>
               <div><p className="text-[10px] text-gray-400 font-bold uppercase">Vehículo Actual</p><p className="text-lg font-black text-gray-900">{selectedVehicle.patente}</p></div>
             </div>
-            <button onClick={() => setSelectedVehicle(null)} className="text-sm text-blue-600 font-bold">Cambiar</button>
+            <button onClick={handleReleaseVehicle} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold uppercase hover:bg-rose-100 transition-colors">Liberar Vehículo</button>
           </div>
           <StatusToggle currentStatus={status} onChange={setStatus} />
           <button onClick={toggleEmergency} className={`w-full py-8 rounded-3xl font-black text-2xl flex flex-col items-center justify-center gap-2 shadow-2xl transition-all ${isEmergency ? 'bg-rose-600 text-white animate-pulse' : 'bg-white text-rose-600 border-4 border-rose-600'}`}><AlertTriangle className={`w-12 h-12 ${isEmergency ? 'animate-bounce' : ''}`} />{isEmergency ? 'EMERGENCIA ACTIVA' : 'BOTÓN DE PÁNICO'}</button>
@@ -572,6 +572,53 @@ export default function App() {
   const fetchProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase.from('gd_profiles').select('*, role:gd_roles(name)').eq('id', userId).single();
+      if (!error) setProfile(data);
+    } catch (err) {}
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchProfile(session.user.id);
+      else setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) { setLoading(true); fetchProfile(session.user.id); }
+      else { setProfile(null); setLoading(false); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (!session) return <Login />;
+
+  const userEmail = session.user.email?.toLowerCase().trim();
+  const dbRole = profile?.role?.name?.toLowerCase().trim() || '';
+  const isAdmin = userEmail === 'admin@geodispatch.com' || dbRole === 'admin';
+
+  return (
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        <Routes>
+          {isAdmin ? (
+            <>
+              <Route path="/admin" element={<AdminView />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </>
+          ) : (
+            <>
+              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </>
+          )}
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+role:gd_roles(name)').eq('id', userId).single();
       if (!error) setProfile(data);
     } catch (err) {}
     finally { setLoading(false); }
