@@ -221,10 +221,24 @@ function AdminView() {
           <div className="w-full lg:w-80 bg-white border-b lg:border-r border-gray-200 shadow-sm z-10 p-4 overflow-y-auto">
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
+                <div className="flex flex-col">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Flota en Tiempo Real</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isDbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                    <span className={`text-[9px] font-bold uppercase tracking-tighter ${isDbConnected ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {isDbConnected ? 'Panel Online' : 'Modo Offline'}
+                    </span>
+                  </div>
+                </div>
                 <button onClick={() => setMuteSiren(!muteSiren)} className={`p-1.5 rounded-lg transition-all ${muteSiren ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-blue-600'}`}>{muteSiren ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}</button>
               </div>
-              {vehicles.map(v => {
+
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 space-y-3">
+                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                  <p className="text-[10px] text-gray-400 font-bold uppercase animate-pulse">Sincronizando flota...</p>
+                </div>
+              ) : vehicles.map(v => {
                 const s = statuses.find(stat => stat.vehicle_id === v.id);
                 const isTrailVisible = visibleTrails[v.id];
                 const isSelected = selectedVehicleId === v.id;
@@ -554,6 +568,20 @@ export default function App() {
           {isAdmin ? (
             <>
               <Route path="/admin" element={<AdminView />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </>
+          ) : (
+            <>
+              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </>
+          )}
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+inView />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </>
           ) : (
