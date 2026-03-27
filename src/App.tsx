@@ -25,7 +25,7 @@ function AdminView() {
   const [visibleTrails, setVisibleTrails] = useState<Record<string, boolean>>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [muteSiren, setMuteSiren] = useState(false);
-  const [historicalTrail, setHistoricalTrail] = useState<[number, number][] | null>(null);
+  const [historicalTrail, setHistoricalTrail] = useState<{lat: number, lng: number, captured_at: string, vehicle_patente: string, chofer_name: string}[] | null>(null);
   const profilesRef = useRef<Profile[]>([]);
 
   useEffect(() => {
@@ -312,25 +312,61 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
   };
 
   useEffect(() => {
-    if (!navigator.onLine || !selectedVehicle || !profileId) return;
+    if (!selectedVehicle || !profileId) return;
+
     const syncPendingData = async () => {
-      const pending = getPendingData();
-      if (pending.length === 0) return;
-      const { error: syncErr } = await supabase.from('gd_gps_history').insert(pending.map(p => ({
-        vehicle_id: selectedVehicle.id, profile_id: profileId, lat: p.lat, lng: p.lng, accuracy: p.accuracy, captured_at: new Date(p.timestamp).toISOString()
-      })));
-      if (!syncErr) clearPending();
+      if (!navigator.onLine) return;
+
+      // 1. Sincronizar GPS
+      const pendingGps = getPendingData();
+      if (pendingGps.length > 0) {
+        const { error: syncErr } = await supabase.from('gd_gps_history').insert(pendingGps.map(p => ({
+          vehicle_id: selectedVehicle.id, profile_id: profileId, lat: p.lat, lng: p.lng, accuracy: p.accuracy, captured_at: new Date(p.timestamp).toISOString()
+        })));
+        if (!syncErr) clearPending();
+      }
+
+      // 2. Sincronizar Estados Pendientes
+      const savedStates = localStorage.getItem('gd_pending_status');
+      if (savedStates) {
+        const pendingStates = JSON.parse(savedStates);
+        if (pendingStates.length > 0) {
+          const { error: stateErr } = await supabase.from('gd_vehicle_status').upsert(pendingStates);
+          if (!stateErr) localStorage.removeItem('gd_pending_status');
+        }
+      }
     };
+
     const interval = setInterval(syncPendingData, 30000);
-    return () => clearInterval(interval);
+    window.addEventListener('online', syncPendingData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', syncPendingData);
+    };
   }, [selectedVehicle, profileId, getPendingData, clearPending]);
 
   useEffect(() => {
     if (selectedVehicle && profileId && !skipNextUpdate.current) {
-      const updateData: any = { vehicle_id: selectedVehicle.id, status, is_emergency: isEmergency, updated_at: new Date().toISOString(), updated_by: profileId };
+      const updateData: any = { 
+        vehicle_id: selectedVehicle.id, 
+        status, 
+        is_emergency: isEmergency, 
+        updated_at: new Date().toISOString(), 
+        updated_by: profileId 
+      };
       if (location) { updateData.lat = location.lat; updateData.lng = location.lng; }
       else if (lastPos) { updateData.lat = lastPos.lat; updateData.lng = lastPos.lng; }
-      supabase.from('gd_vehicle_status').upsert(updateData).then();
+      
+      if (navigator.onLine) {
+        supabase.from('gd_vehicle_status').upsert(updateData).then();
+      } else {
+        const saved = localStorage.getItem('gd_pending_status');
+        const pending = saved ? JSON.parse(saved) : [];
+        // Filtramos para mantener solo el último estado del vehículo actual si ya existía
+        const filtered = pending.filter((p: any) => p.vehicle_id !== selectedVehicle.id);
+        localStorage.setItem('gd_pending_status', JSON.stringify([...filtered, updateData]));
+        console.log('[Status] Offline: Estado guardado localmente');
+      }
     }
   }, [status, selectedVehicle, profileId, isEmergency, location, lastPos]);
 
@@ -357,7 +393,16 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-blue-600 rounded-2xl shadow-lg flex items-center justify-center text-white text-xl font-black">{fullName ? fullName.charAt(0).toUpperCase() : <User className="w-6 h-6" />}</div>
-          <div><p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Bienvenido</p><h1 className="text-2xl font-black text-gray-900 leading-tight">{fullName || 'Chofer'}</h1></div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Bienvenido</p>
+            <h1 className="text-2xl font-black text-gray-900 leading-tight">{fullName || 'Chofer'}</h1>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-2 h-2 rounded-full ${isDbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className={`text-[10px] font-bold uppercase tracking-tighter ${isDbConnected ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {isDbConnected ? 'CONEXIÓN ONLINE' : 'MODO OFFLINE'}
+              </span>
+            </div>
+          </div>
         </div>
         <button onClick={() => supabase.auth.signOut()} className="p-3 text-gray-400 hover:text-rose-500 transition-all"><LogOut className="w-6 h-6" /></button>
       </header>
@@ -429,6 +474,29 @@ export default function App() {
             </>
           ) : (
             <>
+              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </>
+          )}
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+e path="/admin" element={<AdminView />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </>
+          ) : (
+            <>
+              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </>
+          )}
+        </Routes>
+      </div>
+    </Router>
+  );
+}
               <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>

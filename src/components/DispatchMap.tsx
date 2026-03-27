@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker } from 'react-leaflet';
 import React, { useEffect } from 'react';
 import L from 'leaflet';
 import type { VehicleLocationStatus, Vehicle } from '../types';
@@ -12,11 +12,19 @@ interface ExtendedStatus extends VehicleLocationStatus {
   } | null;
 }
 
+interface HistoricalPoint {
+  lat: number;
+  lng: number;
+  captured_at: string;
+  vehicle_patente: string;
+  chofer_name: string;
+}
+
 interface Props {
   vehicles: Vehicle[];
   statuses: ExtendedStatus[];
   selectedVehicleId?: string | null;
-  historicalTrail: [number, number][] | null;
+  historicalTrail: HistoricalPoint[] | null;
 }
 
 // Componente para controlar el movimiento del mapa
@@ -101,14 +109,25 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehic
         {/* Controlador de cámara */}
         <MapController center={mapCenter} />
         
-        
-        {/* Recorrido histórico buscado */}
-        {historicalTrail && historicalTrail.length > 0 && (
-          <Polyline
-            positions={historicalTrail}
-            pathOptions={{ color: '#ef4444', weight: 5, opacity: 0.8 }}
-          />
-        )}
+        {/* Recorrido histórico buscado (Puntos en lugar de líneas) */}
+        {historicalTrail && historicalTrail.map((point, idx) => (
+          <CircleMarker
+            key={`hist-${idx}`}
+            center={[point.lat, point.lng]}
+            radius={5}
+            pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.6 }}
+          >
+            <Popup>
+              <div className="p-1 text-xs">
+                <p className="font-bold text-rose-600 mb-1">Punto de Historial</p>
+                <p><b>Vehículo:</b> {point.vehicle_patente}</p>
+                <p><b>Chofer:</b> {point.chofer_name}</p>
+                <p><b>Fecha:</b> {new Date(point.captured_at).toLocaleDateString()}</p>
+                <p><b>Hora:</b> {new Date(point.captured_at).toLocaleTimeString()}</p>
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
 
         {statuses.map((status) => {
           const vehicle = vehicles.find(v => v.id === status.vehicle_id);
@@ -121,16 +140,19 @@ export const DispatchMap: React.FC<Props> = ({ vehicles, statuses, selectedVehic
 
           return (
             <React.Fragment key={status.vehicle_id}>
-              {validHistory.length > 1 && (
-                <Polyline 
-                  positions={validHistory} 
+              {/* Historial en tiempo real (puntos pequeños en lugar de línea) */}
+              {validHistory.map((h, hIdx) => (
+                <CircleMarker
+                  key={`trail-${status.vehicle_id}-${hIdx}`}
+                  center={h}
+                  radius={3}
                   pathOptions={{ 
-                    color: getStatusColor(status.status, status.is_offline), 
-                    weight: 3, 
-                    opacity: status.is_offline ? 0.3 : 0.8,
-                    }} 
+                    color: getStatusColor(status.status, status.is_offline),
+                    fillOpacity: 0.4,
+                    stroke: false
+                  }}
                 />
-              )}
+              ))}
               
               <Marker 
                 position={[status.lat, status.lng]}
