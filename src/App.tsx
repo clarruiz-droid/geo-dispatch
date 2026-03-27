@@ -361,7 +361,17 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
         if (!syncErr) clearPending();
       }
 
-      // 2. Sincronizar Estados Pendientes
+      // 2. Sincronizar Historial de Estados (gd_status_history)
+      const savedHistory = localStorage.getItem('gd_pending_status_history');
+      if (savedHistory) {
+        const pendingHistory = JSON.parse(savedHistory);
+        if (pendingHistory.length > 0) {
+          const { error: histErr } = await supabase.from('gd_status_history').insert(pendingHistory);
+          if (!histErr) localStorage.removeItem('gd_pending_status_history');
+        }
+      }
+
+      // 3. Sincronizar Estado Actual (gd_vehicle_status)
       const savedStates = localStorage.getItem('gd_pending_status');
       if (savedStates) {
         const pendingStates = JSON.parse(savedStates);
@@ -382,24 +392,44 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
 
   useEffect(() => {
     if (selectedVehicle && profileId && !skipNextUpdate.current) {
+      const now = new Date().toISOString();
       const updateData: any = { 
         vehicle_id: selectedVehicle.id, 
         status, 
         is_emergency: isEmergency, 
-        updated_at: new Date().toISOString(), 
+        updated_at: now, 
         updated_by: profileId 
       };
+      
       if (location) { updateData.lat = location.lat; updateData.lng = location.lng; }
       else if (lastPos) { updateData.lat = lastPos.lat; updateData.lng = lastPos.lng; }
+
+      const historyData = {
+        vehicle_id: selectedVehicle.id,
+        profile_id: profileId,
+        status,
+        changed_at: now,
+        lat: updateData.lat,
+        lng: updateData.lng
+      };
       
       if (navigator.onLine) {
+        // Guardado doble: Estado actual e Historial
         supabase.from('gd_vehicle_status').upsert(updateData).then();
+        supabase.from('gd_status_history').insert(historyData).then();
       } else {
-        const saved = localStorage.getItem('gd_pending_status');
-        const pending = saved ? JSON.parse(saved) : [];
-        const filtered = pending.filter((p: any) => p.vehicle_id !== selectedVehicle.id);
-        localStorage.setItem('gd_pending_status', JSON.stringify([...filtered, updateData]));
-        console.log('[Status] Offline: Estado guardado localmente');
+        // Store & Forward: Estado Actual (para sobreescribir el último)
+        const savedStatus = localStorage.getItem('gd_pending_status');
+        const pendingStatus = savedStatus ? JSON.parse(savedStatus) : [];
+        const filteredStatus = pendingStatus.filter((p: any) => p.vehicle_id !== selectedVehicle.id);
+        localStorage.setItem('gd_pending_status', JSON.stringify([...filteredStatus, updateData]));
+
+        // Store & Forward: Historial (para acumular todos los cambios)
+        const savedHist = localStorage.getItem('gd_pending_status_history');
+        const pendingHist = savedHist ? JSON.parse(savedHist) : [];
+        localStorage.setItem('gd_pending_status_history', JSON.stringify([...pendingHist, historyData]));
+        
+        console.log('[Status] Offline: Datos guardados localmente');
       }
     }
   }, [status, selectedVehicle, profileId, isEmergency, location, lastPos]);
@@ -408,9 +438,29 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
 
   useEffect(() => {
     if (selectedVehicle && location && profileId && navigator.onLine) {
-      supabase.from('gd_gps_history').insert({ vehicle_id: selectedVehicle.id, profile_id: profileId, lat: location.lat, lng: location.lng, accuracy: location.accuracy, captured_at: new Date(location.timestamp).toISOString() }).then();
+      const now = new Date(location.timestamp).toISOString();
+      // 1. Insertar en Historial GPS
+      supabase.from('gd_gps_history').insert({ 
+        vehicle_id: selectedVehicle.id, 
+        profile_id: profileId, 
+        lat: location.lat, 
+        lng: location.lng, 
+        accuracy: location.accuracy, 
+        captured_at: now 
+      }).then();
+
+      // 2. Actualizar Ubicación Actual en Vehicle Status
+      supabase.from('gd_vehicle_status').upsert({
+        vehicle_id: selectedVehicle.id,
+        status,
+        is_emergency: isEmergency,
+        lat: location.lat,
+        lng: location.lng,
+        updated_at: now,
+        updated_by: profileId
+      }).then();
     }
-  }, [location, selectedVehicle, profileId]);
+  }, [location, selectedVehicle, profileId, status, isEmergency]);
 
   const toggleEmergency = () => {
     if (skipNextUpdate.current) return;
