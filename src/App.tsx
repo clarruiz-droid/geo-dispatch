@@ -73,10 +73,15 @@ function AdminView() {
       // 1. Cargar Vehículos y Perfiles
       const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
       const { data: pData } = await supabase.from('gd_profiles').select('*');
-      if (pData) { setProfiles(pData); profilesRef.current = pData; }
       
-      // 2. Cargar Estados Actuales
-      const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
+      // Guardamos perfiles en el Ref para acceso rápido en tiempo real
+      if (pData) { 
+        setProfiles(pData); 
+        profilesRef.current = pData; 
+      }
+      
+      // 2. Cargar Estados Actuales (Sin join complejo para evitar errores de relación)
+      const { data: sData } = await supabase.from('gd_vehicle_status').select('*');
       
       // 3. Cargar Historial de 2h para los trails
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
@@ -85,7 +90,7 @@ function AdminView() {
       if (vData) {
         setVehicles(vData);
         
-        // 4. CONSTRUCCIÓN DE LA FLOTA (Usando exclusivamente gd_vehicle_status como fuente de verdad)
+        // 4. CONSTRUCCIÓN DE LA FLOTA
         const fleetStatuses = vData.map((v) => {
           const current = sData?.find(s => s.vehicle_id === v.id);
           
@@ -95,7 +100,10 @@ function AdminView() {
           const isEmergency = current?.is_emergency || false;
           const updatedAt = current?.updated_at || v.created_at;
           const updatedBy = current?.updated_by || null;
-          const profileInfo = current?.profile || null;
+          
+          // Buscar nombre del chofer en pData (gd_profiles) usando updated_by (auth.users id)
+          const chofer = pData?.find(p => p.id === updatedBy);
+          const profileInfo = chofer ? { full_name: chofer.full_name || 'Desconocido' } : null;
 
           const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === v.id).map(h => [h.lat, h.lng] as [number, number]) : [];
           
