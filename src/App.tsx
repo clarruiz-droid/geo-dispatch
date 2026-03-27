@@ -180,11 +180,11 @@ function AdminView() {
     if (!error) fetchInitialData();
   };
 
-    const handleFetchTrail = async (vehicleId: string, startDate: string, endDate:string) => {
+  const handleFetchTrail = async (vehicleId: string, startDate: string, endDate: string) => {
     try {
       const { data, error } = await supabase
         .from('gd_gps_history')
-        .select('lat, lng')
+        .select('lat, lng, captured_at, profile_id')
         .eq('vehicle_id', vehicleId)
         .gte('captured_at', startDate)
         .lte('captured_at', endDate)
@@ -192,9 +192,17 @@ function AdminView() {
 
       if (error) throw error;
       
+      const vehicle = vehicles.find(v => v.id === vehicleId);
+      
       if (data && data.length > 0) {
-        setHistoricalTrail(data.map(p => [p.lat, p.lng]));
-        setActiveTab('map'); // Cambiar a la vista del mapa para ver el resultado
+        setHistoricalTrail(data.map(p => ({
+          lat: p.lat,
+          lng: p.lng,
+          captured_at: p.captured_at,
+          vehicle_patente: vehicle?.patente || 'Desconocido',
+          chofer_name: profilesRef.current.find(prof => prof.id === p.profile_id)?.full_name || 'Desconocido'
+        })));
+        setActiveTab('map');
       } else {
         alert('No se encontraron datos de GPS para el vehículo en el rango de fechas seleccionado.');
         setHistoricalTrail(null);
@@ -271,11 +279,39 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
   const [status, setStatus] = useState<VehicleStatus>('standby');
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastPos, setLastPos] = useState<{lat: number, lng: number} | null>(null);
+  const [isDbConnected, setIsDbConnected] = useState(navigator.onLine);
   const skipNextUpdate = useRef(true);
 
   const isTracking = status === 'operativo' || status === 'demora';
   const { location, error, pendingCount, getPendingData, clearPending } = useGeolocation(isTracking);
   useWakeLock(isTracking);
+
+  // Verificación de conexión real con la DB
+  useEffect(() => {
+    const checkConnection = async () => {
+      if (!navigator.onLine) {
+        setIsDbConnected(false);
+        return;
+      }
+      try {
+        const { error } = await supabase.from('gd_profiles').select('id', { count: 'exact', head: true }).limit(1);
+        setIsDbConnected(!error);
+      } catch {
+        setIsDbConnected(false);
+      }
+    };
+
+    checkConnection();
+    const interval = setInterval(checkConnection, 30000);
+    window.addEventListener('online', checkConnection);
+    window.addEventListener('offline', () => setIsDbConnected(false));
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', checkConnection);
+      window.removeEventListener('offline', () => setIsDbConnected(false));
+    };
+  }, []);
 
   useEffect(() => {
     const fetchVehicles = async () => {
@@ -362,7 +398,6 @@ function DriverView({ profileId, fullName }: { profileId?: string; fullName?: st
       } else {
         const saved = localStorage.getItem('gd_pending_status');
         const pending = saved ? JSON.parse(saved) : [];
-        // Filtramos para mantener solo el último estado del vehículo actual si ya existía
         const filtered = pending.filter((p: any) => p.vehicle_id !== selectedVehicle.id);
         localStorage.setItem('gd_pending_status', JSON.stringify([...filtered, updateData]));
         console.log('[Status] Offline: Estado guardado localmente');
@@ -474,29 +509,6 @@ export default function App() {
             </>
           ) : (
             <>
-              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          )}
-        </Routes>
-      </div>
-    </Router>
-  );
-}
-e path="/admin" element={<AdminView />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          )}
-        </Routes>
-      </div>
-    </Router>
-  );
-}
               <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>

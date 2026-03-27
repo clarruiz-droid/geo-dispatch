@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker } from 'react-leaflet';
 import React, { useEffect } from 'react';
 import L from 'leaflet';
 import type { VehicleLocationStatus, Vehicle } from '../types';
