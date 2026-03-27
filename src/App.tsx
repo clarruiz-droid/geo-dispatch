@@ -26,7 +26,39 @@ function AdminView() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [muteSiren, setMuteSiren] = useState(false);
   const [historicalTrail, setHistoricalTrail] = useState<{lat: number, lng: number, captured_at: string, vehicle_patente: string, chofer_name: string}[] | null>(null);
+  const [isDbConnected, setIsDbConnected] = useState(navigator.onLine);
+  const [isLoading, setIsLoading] = useState(true);
   const profilesRef = useRef<Profile[]>([]);
+
+  // Verificación de conexión real con la DB
+  useEffect(() => {
+    const checkConnection = async () => {
+      if (!navigator.onLine) {
+        setIsDbConnected(false);
+        return;
+      }
+      try {
+        const { error } = await supabase.from('gd_profiles').select('id', { count: 'exact', head: true }).limit(1);
+        setIsDbConnected(!error);
+      } catch {
+        setIsDbConnected(false);
+      }
+    };
+
+    checkConnection();
+    const interval = setInterval(checkConnection, 30000);
+    window.addEventListener('online', () => {
+      checkConnection();
+      fetchInitialData();
+    });
+    window.addEventListener('offline', () => setIsDbConnected(false));
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', checkConnection);
+      window.removeEventListener('offline', () => setIsDbConnected(false));
+    };
+  }, []);
 
   useEffect(() => {
     const hasEmergency = statuses.some(s => s.is_emergency && !s.is_offline);
@@ -36,73 +68,80 @@ function AdminView() {
   }, [statuses, muteSiren]);
 
   const fetchInitialData = async () => {
-    // 1. Cargar Vehículos y Perfiles
-    const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
-    const { data: pData } = await supabase.from('gd_profiles').select('*');
-    if (pData) { setProfiles(pData); profilesRef.current = pData; }
-    
-    // 2. Cargar Estados Actuales
-    const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
-    
-    // 3. Cargar Historial de 2h para los trails
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const { data: hData } = await supabase.from('gd_gps_history').select('vehicle_id, lat, lng, captured_at').gte('captured_at', twoHoursAgo).order('captured_at', { ascending: true });
-
-    if (vData) {
-      setVehicles(vData);
+    setIsLoading(true);
+    try {
+      // 1. Cargar Vehículos y Perfiles
+      const { data: vData } = await supabase.from('gd_vehicles').select('*').is('deleted_at', null);
+      const { data: pData } = await supabase.from('gd_profiles').select('*');
+      if (pData) { setProfiles(pData); profilesRef.current = pData; }
       
-      // 4. CONSTRUCCIÓN EXHAUSTIVA DE LA FLOTA
-      const fleetStatuses = await Promise.all(vData.map(async (v) => {
-        const current = sData?.find(s => s.vehicle_id === v.id);
-        
-        // Buscamos el ÚLTIMO punto de GPS en el historial (Fuente de verdad de ubicación)
-        const { data: lastGps } = await supabase
-          .from('gd_gps_history')
-          .select('lat, lng, captured_at, profile_id')
-          .eq('vehicle_id', v.id)
-          .order('captured_at', { ascending: false })
-          .limit(1);
+      // 2. Cargar Estados Actuales
+      const { data: sData } = await supabase.from('gd_vehicle_status').select('*, profile:updated_by(full_name)');
+      
+      // 3. Cargar Historial de 2h para los trails
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const { data: hData } = await supabase.from('gd_gps_history').select('vehicle_id, lat, lng, captured_at').gte('captured_at', twoHoursAgo).order('captured_at', { ascending: true });
 
-        const hasLastGps = lastGps && lastGps.length > 0;
+      if (vData) {
+        setVehicles(vData);
         
-        let lat = hasLastGps ? lastGps[0].lat : (current?.lat || null);
-        let lng = hasLastGps ? lastGps[0].lng : (current?.lng || null);
-        let status = (current?.status as VehicleStatus) || 'standby';
-        let isEmergency = current?.is_emergency || false;
-        
-        // La fecha de actualización debe ser la más reciente entre el estado y el GPS
-        const statusDate = current ? new Date(current.updated_at).getTime() : 0;
-        const gpsDate = hasLastGps ? new Date(lastGps[0].captured_at).getTime() : 0;
-        let updatedAt = (hasLastGps && gpsDate > statusDate) ? lastGps[0].captured_at : (current?.updated_at || v.created_at);
-        
-        let updatedBy = current?.updated_by || (hasLastGps ? lastGps[0].profile_id : null);
-        let profileInfo = current?.profile || null;
+        // 4. CONSTRUCCIÓN EXHAUSTIVA DE LA FLOTA
+        const fleetStatuses = await Promise.all(vData.map(async (v) => {
+          const current = sData?.find(s => s.vehicle_id === v.id);
+          
+          // Buscamos el ÚLTIMO punto de GPS en el historial (Fuente de verdad de ubicación)
+          const { data: lastGps } = await supabase
+            .from('gd_gps_history')
+            .select('lat, lng, captured_at, profile_id')
+            .eq('vehicle_id', v.id)
+            .order('captured_at', { ascending: false })
+            .limit(1);
 
-        if (!profileInfo && updatedBy) {
-          const chofer = profilesRef.current.find(p => p.id === updatedBy);
-          if (chofer) profileInfo = { full_name: chofer.full_name || 'Desconocido' };
-        }
+          const hasLastGps = lastGps && lastGps.length > 0;
+          
+          let lat = hasLastGps ? lastGps[0].lat : (current?.lat || null);
+          let lng = hasLastGps ? lastGps[0].lng : (current?.lng || null);
+          let status = (current?.status as VehicleStatus) || 'standby';
+          let isEmergency = current?.is_emergency || false;
+          
+          // La fecha de actualización debe ser la más reciente entre el estado y el GPS
+          const statusDate = current ? new Date(current.updated_at).getTime() : 0;
+          const gpsDate = hasLastGps ? new Date(lastGps[0].captured_at).getTime() : 0;
+          let updatedAt = (hasLastGps && gpsDate > statusDate) ? lastGps[0].captured_at : (current?.updated_at || v.created_at);
+          
+          let updatedBy = current?.updated_by || (hasLastGps ? lastGps[0].profile_id : null);
+          let profileInfo = current?.profile || null;
 
-        const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === v.id).map(h => [h.lat, h.lng] as [number, number]) : [];
-        
-        return {
-          vehicle_id: v.id,
-          status,
-          lat,
-          lng,
-          is_emergency: isEmergency,
-          updated_at: updatedAt,
-          updated_by: updatedBy,
-          created_at: v.created_at,
-          deleted_at: null,
-          created_by: null,
-          history: vehicleHistory,
-          is_offline: (Date.now() - new Date(updatedAt).getTime()) > 60000,
-          profile: profileInfo
-        };
-      }));
+          if (!profileInfo && updatedBy) {
+            const chofer = profilesRef.current.find(p => p.id === updatedBy);
+            if (chofer) profileInfo = { full_name: chofer.full_name || 'Desconocido' };
+          }
 
-      setStatuses(fleetStatuses);
+          const vehicleHistory = hData ? hData.filter(h => h.vehicle_id === v.id).map(h => [h.lat, h.lng] as [number, number]) : [];
+          
+          return {
+            vehicle_id: v.id,
+            status,
+            lat,
+            lng,
+            is_emergency: isEmergency,
+            updated_at: updatedAt,
+            updated_by: updatedBy,
+            created_at: v.created_at,
+            deleted_at: null,
+            created_by: null,
+            history: vehicleHistory,
+            is_offline: (Date.now() - new Date(updatedAt).getTime()) > 60000,
+            profile: profileInfo
+          };
+        }));
+
+        setStatuses(fleetStatuses);
+      }
+    } catch (err) {
+      console.error("Error fetching initial data", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -568,20 +607,6 @@ export default function App() {
           {isAdmin ? (
             <>
               <Route path="/admin" element={<AdminView />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/" element={<DriverView profileId={session?.user?.id} fullName={profile?.full_name} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          )}
-        </Routes>
-      </div>
-    </Router>
-  );
-}
-inView />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </>
           ) : (
