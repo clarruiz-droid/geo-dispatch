@@ -73,7 +73,7 @@ function AdminView() {
         // La fecha de actualización debe ser la más reciente entre el estado y el GPS
         const statusDate = current ? new Date(current.updated_at).getTime() : 0;
         const gpsDate = hasLastGps ? new Date(lastGps[0].captured_at).getTime() : 0;
-        let updatedAt = (gpsDate > statusDate) ? lastGps[0].captured_at : (current?.updated_at || v.created_at);
+        let updatedAt = (hasLastGps && gpsDate > statusDate) ? lastGps[0].captured_at : (current?.updated_at || v.created_at);
         
         let updatedBy = current?.updated_by || (hasLastGps ? lastGps[0].profile_id : null);
         let profileInfo = current?.profile || null;
